@@ -1,0 +1,13 @@
+pandas
+langchain-community
+langchain-openai
+langchain-core
+langgraph
+faiss-cpu
+python-dotenv
+langchain
+langchain-ollama
+openpyxl
+lancedb
+beautifulsoup4
+flask
