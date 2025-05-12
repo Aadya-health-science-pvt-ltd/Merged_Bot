@@ -2,6 +2,7 @@
 # ---- Cell 0 ----
 import pandas as pd
 import lancedb
+from datetime import datetime, timezone
 import pyarrow as pa # Import pyarrow for schema definition if needed
 from concurrent.futures import ThreadPoolExecutor
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
@@ -557,7 +558,6 @@ def process_clarification_node(state: ChatState):
 # Graph Edges & Routing Logic
 # ====================
 
-from datetime import datetime, timezone
 
 def route_logic(state: ChatState, appointment_data: dict) -> Literal["clarify", "process_clarify", "get_info", "symptom", "followup"]:
     """ Determines the next node to execute based on appointment data."""
@@ -670,10 +670,6 @@ app = workflow.compile(checkpointer=memory)
 print("Graph compiled successfully.")
 
 
-# ---- Cell 20 ----
-from IPython.display import Image, display
-
-display(Image(app.get_graph().draw_mermaid_png()))
 
 # ---- Cell 21 ----
 # ====================
