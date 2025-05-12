@@ -22,6 +22,10 @@ from dotenv import load_dotenv
 import langchain_core
 import re # Import regex for clarification check
 import os # Import os for file existence check
+from typing import TypedDict, Annotated, Sequence
+from langchain_core.messages import BaseMessage
+from langgraph.graph.message import add_messages
+from langchain_core.documents import Document
 
 
 # ---- Cell 1 ----
@@ -266,17 +270,6 @@ retriever_dim = vector_store_dim.as_retriever(search_kwargs={"k": 2})
 retriever_cls = vector_store_cls.as_retriever(search_kwargs={"k": 2})
 
 
-# ---- Cell 13 ----
-retriever_dim.invoke("I have sneezing")
-
-# ---- Cell 14 ----
-retriever_cls.invoke("I am a female adult")
-
-# ---- Cell 15 ----
-from typing import TypedDict, Annotated, Sequence
-from langchain_core.messages import BaseMessage
-from langgraph.graph.message import add_messages
-from langchain_core.documents import Document
 
 # ====================
 # State Definition
