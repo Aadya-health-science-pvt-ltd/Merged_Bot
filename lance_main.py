@@ -54,12 +54,42 @@ embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL, chunk_size=BATCH_SIZE)
 db = lancedb.connect("./lancedb")
 
 
+def get_appointment_data(patient_id: str) -> dict:
+    """Fetches appointment data for a patient. Replace this with your actual database logic."""
+    # Replace this with your actual appointment data fetching logic
+    return {
+        "patient-id": patient_id,
+        "patient-name": "Karan",
+        "patient-mobile": "99999999",
+        "appointments": [
+            {
+                "appt-id": "1",
+                "appt-datetime": "2025-04-21T18:25:00-05:30",
+                "appt-status": "completed",
+                "doctor-name": "Dr. Balachandra BV",
+                "procedure-name": "Allergy Consultation",
+                "symptom-summary": "Sneezing",
+                "prescrption": "Sample prescription"
+            }
+        ]
+    }
+
+
 # ---- Cell 2 ----
 # ====================
 # Doctor Info RAG Setup
 # ====================
-def setup_doctor_info_retriever():
-    """Process and store doctor website information"""
+def setup_doctor_info_retriever(specialty="paediatrics"):
+    """Process and store doctor website information, embedding only if not already present."""
+    try:
+        # Check if the table already exists
+        db.open_table("doctor_info")
+        print("Doctor info table already exists. No need to embed documents again.")
+        return LanceDB(connection=db, table_name="doctor_info", embedding=embeddings).as_retriever()
+    except Exception as e:
+        print(f"Creating new doctor info table: {e}")
+
+    # If the table does not exist, proceed to load and embed data
     loader = WebBaseLoader(DOCTOR_WEBSITE_URL)
     docs = loader.load()
     
@@ -71,7 +101,7 @@ def setup_doctor_info_retriever():
     splits = splitter.split_documents(docs)
     
     texts = [doc.page_content for doc in splits]
-    metadatas = [{"source": DOCTOR_WEBSITE_URL} for _ in texts]
+    metadatas = [{"source": DOCTOR_WEBSITE_URL, "specialty": specialty} for _ in texts]
     vectors = embeddings.embed_documents(texts)
     
     data = [{
@@ -80,24 +110,14 @@ def setup_doctor_info_retriever():
         "metadata": meta
     } for vec, text, meta in zip(vectors, texts, metadatas)]
     
-    try:
-        tbl = db.create_table("doctor_info", data=data)
-    except Exception as e:
-        print(f"Using existing doctor info table: {e}")
-        tbl = db.open_table("doctor_info")
-        tbl.add(data)
-    
+    # Create the table with the embedded data
+    tbl = db.create_table("doctor_info", data=data)
     return LanceDB(connection=db, table_name="doctor_info", embedding=embeddings).as_retriever()
+
 
 doctor_retriever = setup_doctor_info_retriever()
 
 
-# ---- Cell 3 ----
-loader = WebBaseLoader(DOCTOR_WEBSITE_URL)
-docs = loader.load()
-
-# ---- Cell 4 ----
-print(docs[0].page_content)
 
 # ---- Cell 5 ----
 # Define prompt templates
@@ -138,7 +158,7 @@ chain_cls = CLS_PROMPT | llm | StrOutputParser()
 
 
 # ---- Cell 6 ----
-def process_batch(df, chain, sheet_name):
+def process_batch(df, chain, sheet_name, specialty="paediatrics"):
     """Process a batch of rows with error handling"""
     results = []
     for _, row in df.iterrows():
@@ -151,7 +171,8 @@ def process_batch(df, chain, sheet_name):
                     "symptom": str(row_dict.get("Symptoms", "Unknown")).strip(),
                     "is_child": "child" if "child" in sheet_name.lower() else "both",
                     "gender": "female" if row_dict.get("Only Female", 0) else "both",
-                    "source": sheet_name
+                    "source": sheet_name,
+                    "specialty": specialty
                 }
             })
         except Exception as e:
@@ -200,40 +221,32 @@ cls_docs = process_sheets(
     sheet_filter=lambda x: "Clustering" in x
 )
 
-# ---- Cell 9 ----
-cls_docs
 
 # ---- Cell 10 ----
-def store_documents(docs, table_name):
-    """Store documents in LanceDB with batch embedding"""
-    texts = [doc["text"] for doc in docs]
-    metadatas = [doc["metadata"] for doc in docs]
+def store_documents_once(docs, table_name, specialty="paediatrics"):
+    """ Store documents in LanceDB with batch embedding, only if they don't exist."""
+    try:
+        # Check if the table exists
+        db.open_table(table_name)
+        print(f"Table {table_name} already exists. No need to embed documents again.")
+        return
+    except Exception as e:
+        print(f"Creating new table {table_name}...")
     
-    # Get embeddings for all texts first
-    print(f"Embedding {len(texts)} documents...")
+    # Add specialty to metadata
+    texts = [doc["text"] for doc in docs]
+    metadatas = [{**doc["metadata"], "specialty": specialty} for doc in docs]
+    
     vectors = embeddings.embed_documents(texts)
     
-    # Prepare data for insertion
     data = [{
         "vector": vectors[i],
         "text": texts[i],
         "metadata": metadatas[i]
     } for i in range(len(texts))]
     
-    # Create table with first batch
-    try:
-        print(f"Creating table {table_name}...")
-        # Create with first batch
-        tbl = db.create_table(table_name, data=data[:BATCH_SIZE])
-    except Exception as e:
-        print(f"Table exists, opening: {e}")
-        tbl = db.open_table(table_name)
-    
-    # Insert remaining data in batches
-    print(f"Inserting {len(data)-BATCH_SIZE} remaining documents...")
-    for i in range(BATCH_SIZE, len(data), BATCH_SIZE):
-        batch = data[i:i+BATCH_SIZE]
-        tbl.add(batch)
+    tbl = db.create_table(table_name, data=data)
+    return tbl
 
 # ---- Cell 11 ----
 print("Storing dimension data...")
@@ -544,31 +557,63 @@ def process_clarification_node(state: ChatState):
 # Graph Edges & Routing Logic
 # ====================
 
-def route_logic(state: ChatState) -> Literal["clarify", "process_clarify", "get_info", "symptom", "followup"]:
-    """Determines the next node to execute."""
+from datetime import datetime, timezone
+
+def route_logic(state: ChatState, appointment_data: dict) -> Literal["clarify", "process_clarify", "get_info", "symptom", "followup"]:
+    """ Determines the next node to execute based on appointment data."""
     print(f"--- Routing Logic: Status='{state.get('patient_status')}', Needs Clarification='{state.get('needs_clarification')}' ---")
 
     # Check if the state indicates clarification was just asked (needs_clarification=True)
-    # This flag is set by the clarify_node itself.
     if state.get("needs_clarification"):
-        # If clarification was just asked, the next step is to process the user's response
-        print("Routing -> process_clarify")
         return "process_clarify"
-    # If clarification wasn't just asked, check if the status is already known
-    elif state.get("patient_status") == "pre":
+    
+    # Get current time
+    current_time = datetime.now(timezone.utc)
+    
+    # Extract relevant appointments
+    future_appointments = [
+        appt for appt in appointment_data.get("appointments", [])
+        if appt["appt-status"] == "booked" and 
+           (datetime.fromisoformat(appt["appt-datetime"]) - current_time).total_seconds() < 48*3600
+    ]
+    past_appointments = [
+        appt for appt in appointment_data.get("appointments", [])
+        if appt["appt-status"] == "completed"
+    ]
+
+    # Routing logic based on appointment data
+    if not past_appointments and not future_appointments:
+        # No appointments found - use Q&A bot
         print("Routing -> get_info")
         return "get_info"
-    elif state.get("patient_status") == "during":
-        print("Routing -> symptom")
-        return "symptom"
-    elif state.get("patient_status") == "post":
+    
+    if future_appointments:
+        if not past_appointments:
+            # First time visitor with future appointment - start symptom collection
+            print("Routing -> symptom")
+            return "symptom"
+        else:
+            # Check if same episode
+            same_episode = classifier_chain.invoke({
+                "query": f"Is this appointment part of the same episode as previous? Current symptoms: {appointment_data.get('current_symptoms')}, Previous summary: {past_appointments[0].get('symptom-summary')}"
+            }).strip().lower()
+            
+            if same_episode == "yes":
+                # Use previous summary and prescription
+                state["prescription"] = past_appointments[0].get("prescrption")
+                state["symptom-summary"] = past_appointments[0].get("symptom-summary")
+            print("Routing -> symptom")
+            return "symptom"
+    
+    if past_appointments and not future_appointments:
+        # Past appointment with no future appointments - use followup bot
+        state["prescription"] = past_appointments[0].get("prescrption")
         print("Routing -> followup")
         return "followup"
-    else:
-        # If status is unknown and clarification wasn't just asked, ask for clarification
-        print("Routing -> clarify (Status is None or invalid)")
-        return "clarify"
 
+    # Default to clarification
+    print("Routing -> clarify (No matching condition)")
+    return "clarify"
 
 # ---- Cell 19 ----
 # ====================
@@ -635,44 +680,34 @@ display(Image(app.get_graph().draw_mermaid_png()))
 # Conversation Execution Logic (Corrected)
 # ====================
 def run_conversation():
-    """Runs the chatbot conversation loop."""
+    """ Runs the chatbot conversation loop."""
     thread_id = input("Enter a unique thread ID for this conversation (e.g., patient123): ")
     config = {"configurable": {"thread_id": thread_id}}
     print(f"\nStarting/Resuming conversation with thread ID: {thread_id}")
     print("Type 'exit' or 'quit' to end the conversation.")
 
+    # Get appointment data
+    appointment_data = get_appointment_data(thread_id)
+    
     # Get the initial state from the checkpointer or start fresh
-    # The graph's entry logic will handle asking clarification if needed
     current_state = app.get_state(config)
 
-    # Display the last message from the assistant if resuming
     if current_state and current_state.values.get("messages"):
         last_ai_message = next((msg for msg in reversed(current_state.values["messages"]) if isinstance(msg, AIMessage)), None)
         if last_ai_message:
             print(f"\nAssistant: {last_ai_message.content}")
         else:
-             # If no AI message, trigger the entry point to get the first message (e.g., clarification)
-             try:
-                 initial_state = app.invoke({}, config) # Pass empty dict to start
-                 if initial_state and initial_state.get("messages"):
-                     print(f"\nAssistant: {initial_state['messages'][-1].content}")
-                 else:
-                     print("\nAssistant: Hello! How can I help you today?") # Fallback
-             except Exception as e:
-                  print(f"\nAssistant: Error starting conversation: {e}")
-                  return
-    else:
-        # If no state exists, invoke with empty dict to trigger entry point
-        try:
-            initial_state = app.invoke({}, config) # Pass empty dict to start
+            initial_state = app.invoke({}, config)
             if initial_state and initial_state.get("messages"):
                 print(f"\nAssistant: {initial_state['messages'][-1].content}")
             else:
-                print("\nAssistant: Hello! How can I help you today?") # Fallback
-        except Exception as e:
-             print(f"\nAssistant: Error starting conversation: {e}")
-             return
-
+                print("\nAssistant: Hello! How can I help you today?")
+    else:
+        initial_state = app.invoke({}, config)
+        if initial_state and initial_state.get("messages"):
+            print(f"\nAssistant: {initial_state['messages'][-1].content}")
+        else:
+            print("\nAssistant: Hello! How can I help you today?")
 
     while True:
         query = input("Patient: ").strip()
@@ -680,26 +715,17 @@ def run_conversation():
             print("\nAssistant: Goodbye!")
             break
 
-        # Invoke the graph with the user's message
-        # The checkpointer automatically loads the previous state for the thread_id
-        try:
-            # Ensure input is in the correct format expected by add_messages
-            input_data = {"messages": [HumanMessage(content=query)]}
-            state = app.invoke(input_data, config)
-            # The checkpointer automatically saves the updated state
-            if state and state.get("messages"):
-                 # Find the last AI message in the updated state to display
-                 last_ai_message = next((msg for msg in reversed(state["messages"]) if isinstance(msg, AIMessage)), None)
-                 if last_ai_message:
-                      print(f"\nAssistant: {last_ai_message.content}")
-                 else:
-                      print("\nAssistant: (No response generated)") # Should not happen ideally
+        input_data = {"messages": [HumanMessage(content=query)]}
+        state = app.invoke(input_data, config)
+        
+        if state and state.get("messages"):
+            last_ai_message = next((msg for msg in reversed(state["messages"]) if isinstance(msg, AIMessage)), None)
+            if last_ai_message:
+                print(f"\nAssistant: {last_ai_message.content}")
             else:
-                 print("\nAssistant: I encountered an issue processing that. Could you please try again?")
-        except Exception as e:
-            print(f"\nAssistant: An error occurred: {e}. Please try again.")
-            # Consider adding more specific error handling or logging
-
+                print("\nAssistant: (No response generated)")
+        else:
+            print("\nAssistant: I encountered an issue processing that. Could you please try again?")
 
 
 
@@ -714,11 +740,6 @@ if __name__ == "__main__":
         print("\nCould not initialize all data retrievers. Exiting.")
         if not retriever_dim: print("- Symptom dimension retriever failed.")
         if not retriever_cls: print("- Symptom classification retriever failed.")
-        if not doctor_retriever: print("- Doctor info ret" \
-        "riever failed.")
-
-
-
-# ---- Cell 24 ----
+        if not doctor_retriever: print("- Doctor info retriever failed.")
 
 
