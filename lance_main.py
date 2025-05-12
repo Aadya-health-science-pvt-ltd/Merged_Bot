@@ -1,4 +1,3 @@
-# Auto-generated Python script from lance1.ipynb
 
 # ---- Cell 0 ----
 import pandas as pd
