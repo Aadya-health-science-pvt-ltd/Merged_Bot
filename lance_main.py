@@ -255,10 +255,10 @@ def store_documents_once(docs, table_name, specialty="paediatrics"):
 
 # ---- Cell 11 ----
 print("Storing dimension data...")
-store_documents(dim_docs, "symptom_dimensions")
+store_documents_once(dim_docs, "symptom_dimensions")
 
 print("Storing classification data...")
-store_documents(cls_docs, "symptom_classifications")
+store_documents_once(cls_docs, "symptom_classifications")
 
 
 # ---- Cell 12 ----
@@ -269,6 +269,9 @@ vector_store_cls = LanceDB(connection=db, embedding=embeddings, table_name="symp
 retriever_dim = vector_store_dim.as_retriever(search_kwargs={"k": 2})
 retriever_cls = vector_store_cls.as_retriever(search_kwargs={"k": 2})
 
+
+
+# ---- Cell 15 ----
 
 
 # ====================
