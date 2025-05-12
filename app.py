@@ -24,6 +24,8 @@ def start_conversation():
       - thread_id (str)
       - doctor_name (str, optional)
       - clinic_name (str, optional)
+      - specialty (str, optional)
+      - appointment_data (dict, optional)
     """
     data = request.get_json() or {}
     thread_id = data.get('thread_id')
@@ -35,13 +37,26 @@ def start_conversation():
         cfg['doctor_name'] = data['doctor_name']
     if data.get('clinic_name'):
         cfg['clinic_name'] = data['clinic_name']
+    if data.get('specialty'):
+        cfg['specialty'] = data['specialty']
+    if data.get('appointment_data'):
+        cfg['appointment_data'] = data['appointment_data']
 
-    conversations[thread_id] = {
-        'app': lance_main.app,
-        'last_activity': datetime.utcnow(),
-        'configurable': cfg
-    }
-    return jsonify({ 'message': f'Conversation {thread_id} started.' }), 200
+    # Initialize retrievers with specialty if provided
+    specialty = cfg.get('specialty', 'paediatrics')
+    doctor_retriever = lance_main.setup_doctor_info_retriever(specialty)
+    retriever_dim = lance_main.vector_store_dim
+    retriever_cls = lance_main.vector_store_cls
+
+    if doctor_retriever and retriever_dim and retriever_cls:
+        conversations[thread_id] = {
+            'app': lance_main.app,
+            'last_activity': datetime.utcnow(),
+            'configurable': cfg
+        }
+        return jsonify({ 'message': f'Conversation {thread_id} started with specialty: {specialty}.' }), 200
+    else:
+        return jsonify({ 'error': 'Failed to initialize retrievers.' }), 500
 
 @app.route('/message', methods=['POST'])
 def send_message():
