@@ -30,21 +30,18 @@ def start_conversation():
     data = request.get_json() or {}
     thread_id = data.get('thread_id')
     if not thread_id:
-        return jsonify({ 'error': 'thread_id is required' }), 400
+        return jsonify({'error': 'thread_id is required'}), 400
 
-    cfg = { 'thread_id': thread_id }
-    if data.get('doctor_name'):
-        cfg['doctor_name'] = data['doctor_name']
-    if data.get('clinic_name'):
-        cfg['clinic_name'] = data['clinic_name']
-    if data.get('specialty'):
-        cfg['specialty'] = data['specialty']
-    if data.get('appointment_data'):
-        cfg['appointment_data'] = data['appointment_data']
+    cfg = {
+        'thread_id': thread_id,
+        'doctor_name': data.get('doctor_name'),
+        'clinic_name': data.get('clinic_name'),
+        'specialty': data.get('specialty', 'paediatrics'),  # Default to 'paediatrics'
+        'appointment_data': data.get('appointment_data')
+    }
 
     # Initialize retrievers with specialty if provided
-    specialty = cfg.get('specialty', 'paediatrics')
-    doctor_retriever = lance_main.setup_doctor_info_retriever(specialty)
+    doctor_retriever = lance_main.setup_doctor_info_retriever(cfg['specialty'])
     retriever_dim = lance_main.vector_store_dim
     retriever_cls = lance_main.vector_store_cls
 
@@ -54,9 +51,9 @@ def start_conversation():
             'last_activity': datetime.utcnow(),
             'configurable': cfg
         }
-        return jsonify({ 'message': f'Conversation {thread_id} started with specialty: {specialty}.' }), 200
+        return jsonify({'message': f'Conversation {thread_id} started with specialty: {cfg["specialty"]}.'}), 200
     else:
-        return jsonify({ 'error': 'Failed to initialize retrievers.' }), 500
+        return jsonify({'error': 'Failed to initialize retrievers.'}), 500
 
 @app.route('/message', methods=['POST'])
 def send_message():
@@ -72,15 +69,15 @@ def send_message():
     user_message = data.get('message')
 
     if not thread_id or not user_message:
-        return jsonify({ 'error': 'thread_id and message are required' }), 400
+        return jsonify({'error': 'thread_id and message are required'}), 400
 
     if thread_id not in conversations:
-        return jsonify({ 'error': 'Conversation not found. Call /start_conversation first.' }), 404
+        return jsonify({'error': 'Conversation not found. Call /start_conversation first.'}), 404
 
     conv = conversations[thread_id]
     if datetime.utcnow() - conv['last_activity'] > SESSION_TIMEOUT:
         conversations.pop(thread_id, None)
-        return jsonify({ 'error': 'Session expired after 15 minutes of inactivity.' }), 440
+        return jsonify({'error': 'Session expired after 15 minutes of inactivity.'}), 440
 
     conv['last_activity'] = datetime.utcnow()
 
@@ -88,8 +85,12 @@ def send_message():
     if data.get('prescription'):
         configurable['prescription'] = data['prescription']
 
-    config = { 'configurable': configurable }
-    input_data = { 'messages': [HumanMessage(content=user_message)] }
+    # Include appointment_data if it exists
+    if 'appointment_data' in configurable:
+        configurable['appointment_data'] = configurable['appointment_data']
+
+    config = {'configurable': configurable}
+    input_data = {'messages': [HumanMessage(content=user_message)]}
 
     future = executor.submit(lambda: conv['app'].invoke(input_data, config))
     state = future.result()
@@ -101,8 +102,8 @@ def send_message():
                 reply = msg.content
                 break
 
-    return jsonify({ 'reply': reply }), 200
-    
+    return jsonify({'reply': reply}), 200
+
 if __name__ == '__main__':
     port = int(os.getenv('FLASK_RUN_PORT', 5000))
     app.run(host='0.0.0.0', port=port, threaded=True, debug=True)
