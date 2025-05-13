@@ -69,15 +69,15 @@ def send_message():
     user_message = data.get('message')
 
     if not thread_id or not user_message:
-        return jsonify({ 'error': 'thread_id and message are required' }), 400
+        return jsonify({'error': 'thread_id and message are required'}), 400
 
     if thread_id not in conversations:
-        return jsonify({ 'error': 'Conversation not found. Call /start_conversation first.' }), 404
+        return jsonify({'error': 'Conversation not found. Call /start_conversation first.'}), 404
 
     conv = conversations[thread_id]
     if datetime.utcnow() - conv['last_activity'] > SESSION_TIMEOUT:
         conversations.pop(thread_id, None)
-        return jsonify({ 'error': 'Session expired after 15 minutes of inactivity.' }), 440
+        return jsonify({'error': 'Session expired after 15 minutes of inactivity.'}), 440
 
     conv['last_activity'] = datetime.utcnow()
 
@@ -85,12 +85,12 @@ def send_message():
     if data.get('prescription'):
         configurable['prescription'] = data['prescription']
 
-    # Include appointment_data if it exists
+    # Ensure appointment_data is included in the config
     if 'appointment_data' in configurable:
         configurable['appointment_data'] = configurable['appointment_data']
 
-    config = { 'configurable': configurable }
-    input_data = { 'messages': [HumanMessage(content=user_message)] }
+    config = {'configurable': configurable}
+    input_data = {'messages': [HumanMessage(content=user_message)]}
 
     future = executor.submit(lambda: conv['app'].invoke(input_data, config))
     state = future.result()
@@ -102,7 +102,7 @@ def send_message():
                 reply = msg.content
                 break
 
-    return jsonify({ 'reply': reply }), 200
+    return jsonify({'reply': reply}), 200
 
 if __name__ == '__main__':
     port = int(os.getenv('FLASK_RUN_PORT', 5000))
