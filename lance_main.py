@@ -207,27 +207,7 @@ def process_sheets(file_path, chain, sheet_filter):
     
     return all_docs
 
-
-# ---- Cell 7 ----
-# Process dimension data
-print("Processing symptom dimensions...")
-dim_docs = process_sheets(
-    "SU.xlsx",
-    chain_dim,
-    sheet_filter=lambda x: "Dimensions" in x
-)
-
-# ---- Cell 8 ----
-# Process classification data
-print("Processing symptom classifications...")
-cls_docs = process_sheets(
-    "SU.xlsx",
-    chain_cls,
-    sheet_filter=lambda x: "Clustering" in x
-)
-
-
-# ---- Cell 10 ----
+# ---- Cell 6.9 ----
 def store_documents_once(docs, table_name, specialty="paediatrics"):
     """ Store documents in LanceDB with batch embedding, only if they don't exist."""
     try:
@@ -253,12 +233,39 @@ def store_documents_once(docs, table_name, specialty="paediatrics"):
     tbl = db.create_table(table_name, data=data)
     return tbl
 
-# ---- Cell 11 ----
-print("Storing dimension data...")
-store_documents_once(dim_docs, "symptom_dimensions")
 
-print("Storing classification data...")
-store_documents_once(cls_docs, "symptom_classifications")
+# ---- Cell 7 ----
+# Process dimension data
+print("Processing symptom dimensions...")
+try:
+    db.open_table("symptom_dimensions")
+    print("Symptom dimensions table already exists. Skipping processing.")
+    dim_docs = []  # Initialize as empty list if not processing
+except Exception as e:
+    print(f"Creating new symptom dimensions table: {e}")
+    dim_docs = process_sheets(
+        "SU.xlsx",
+        chain_dim,
+        sheet_filter=lambda x: "Dimensions" in x
+    )
+    store_documents_once(dim_docs, "symptom_dimensions")
+
+# ---- Cell 8 ----
+# Process classification data
+print("Processing symptom classifications...")
+try:
+    db.open_table("symptom_classifications")
+    print("Symptom classifications table already exists. Skipping processing.")
+    cls_docs = []  # Initialize as empty list if not processing
+except Exception as e:
+    print(f"Creating new symptom classifications table: {e}")
+    cls_docs = process_sheets(
+        "SU.xlsx",
+        chain_cls,
+        sheet_filter=lambda x: "Clustering" in x
+    )
+    store_documents_once(cls_docs, "symptom_classifications")
+
 
 
 # ---- Cell 12 ----
