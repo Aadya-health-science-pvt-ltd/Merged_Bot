@@ -5,12 +5,13 @@ from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
 
 from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.runnables import RunnableConfig # Import RunnableConfig
 
 load_dotenv()
 
 app = Flask(__name__)
 
-import lance_main 
+import lance_main
 executor = ThreadPoolExecutor(max_workers=os.cpu_count() * 2)
 
 conversations = {}
@@ -37,7 +38,7 @@ def start_conversation():
         'doctor_name': data.get('doctor_name'),
         'clinic_name': data.get('clinic_name'),
         'specialty': data.get('specialty', 'paediatrics'),  # Default to 'paediatrics'
-        'appointment_data': data.get('appointment_data')
+        'appointment_data': data.get('appointment_data')  # Include appointment_data here
     }
 
     # Initialize retrievers with specialty if provided
@@ -86,8 +87,8 @@ def send_message():
         configurable['prescription'] = data['prescription']
 
     # Ensure appointment_data is included in the config
-    if 'appointment_data' in configurable:
-        configurable['appointment_data'] = configurable['appointment_data']
+    if 'appointment_data' not in configurable:
+        configurable['appointment_data'] = conv['configurable'].get('appointment_data',{}) #important
 
     config = {'configurable': configurable}
     input_data = {'messages': [HumanMessage(content=user_message)]}

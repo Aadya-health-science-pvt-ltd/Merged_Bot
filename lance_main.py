@@ -12,6 +12,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage
 from langchain_core.runnables import RunnablePassthrough
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_core.runnables import RunnableConfig # Import RunnableConfig
 from langchain_core.documents import Document
 from langgraph.graph import StateGraph, END, START
 from langgraph.checkpoint.memory import MemorySaver
@@ -562,7 +563,7 @@ def process_clarification_node(state: ChatState):
 # ====================
 
 
-def route_logic(state: ChatState, appointment_data: dict) -> Literal["clarify", "process_clarify", "get_info", "symptom", "followup"]:
+def route_logic(state: ChatState, config: RunnableConfig) -> Literal["clarify", "process_clarify", "get_info", "symptom", "followup"]:
     """ Determines the next node to execute based on appointment data."""
     print(f"--- Routing Logic: Status='{state.get('patient_status')}', Needs Clarification='{state.get('needs_clarification')}' ---")
 
@@ -574,6 +575,7 @@ def route_logic(state: ChatState, appointment_data: dict) -> Literal["clarify", 
     current_time = datetime.now(timezone.utc)
     
     # Extract relevant appointments
+    appointment_data = config.get("appointment_data", {}) # Get appointment_data from config
     future_appointments = [
         appt for appt in appointment_data.get("appointments", [])
         if appt["appt-status"] == "booked" and 
