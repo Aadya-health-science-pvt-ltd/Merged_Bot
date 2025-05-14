@@ -3,6 +3,7 @@
 import pandas as pd
 import lancedb
 from datetime import datetime, timezone
+from typing import Literal, Optional, List, Dict
 import pyarrow as pa # Import pyarrow for schema definition if needed
 from concurrent.futures import ThreadPoolExecutor
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
@@ -60,25 +61,6 @@ embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL, chunk_size=BATCH_SIZE)
 db = lancedb.connect("./lancedb")
 
 
-def get_appointment_data(patient_id: str) -> dict:
-    """Fetches appointment data for a patient. Replace this with your actual database logic."""
-    # Replace this with your actual appointment data fetching logic
-    return {
-        "patient-id": patient_id,
-        "patient-name": "Karan",
-        "patient-mobile": "99999999",
-        "appointments": [
-            {
-                "appt-id": "1",
-                "appt-datetime": "2025-04-21T18:25:00-05:30",
-                "appt-status": "completed",
-                "doctor-name": "Dr. Balachandra BV",
-                "procedure-name": "Allergy Consultation",
-                "symptom-summary": "Sneezing",
-                "prescrption": "Sample prescription"
-            }
-        ]
-    }
 
 
 # ---- Cell 2 ----
@@ -285,12 +267,17 @@ retriever_cls = vector_store_cls.as_retriever(search_kwargs={"k": 2})
 # ====================
 # State Definition
 # ====================
+
+# Define a type for the appointment data structure
+AppointmentData = Dict[str, any] # ADD THIS LINE
 class ChatState(TypedDict):
-    messages: Annotated[Sequence[BaseMessage], add_messages]
-    context: Optional[Sequence[Document]] # Store retrieved context if needed later
-    patient_status: Optional[Literal["pre", "during", "post"]] # 'pre', 'during', 'post' or None if unknown
-    prescription: Optional[str] # Store prescription for follow-up
-    needs_clarification: bool # Flag to indicate if clarification was just asked
+    """
+    Represents the state of the chat, including messages, patient status,
+    and now, appointment data.  Derives from dict.
+    """
+    messages: List[BaseMessage]
+    patient_status: Optional[Literal["pre", "during", "post"]] = None
+    appointment_data: Optional[AppointmentData] = None # Add appointment_data to the state
 
 
 # ---- Cell 16 ----
@@ -508,117 +495,162 @@ def followup_node(state: ChatState):
     })
     return {"messages": [AIMessage(content=response)], "context": None} # No specific context retrieved here
 
+def same_episode_check_node(state: ChatState):
+    """Node to ask the user if the current issue is the same episode."""
+    print("--- Executing Same Episode Check Node ---")
+    previous_appointment = next((appt for appt in state.get("appointment_data", {}).get("appointments", []) if appt.get("appt-status") == "completed" and appt.get("doctor_name") == state.get("configurable", {}).get("doctor_name")), None)
+    current_message = state["messages"][-1].content if state["messages"] else ""
 
-def clarify_node(state: ChatState):
-    """Node to ask the clarification question."""
-    print("--- Executing Clarify Node ---")
-    prompt = f"""**Welcome to {CLINIC_INFO['name']}!**
-To help direct your query, please tell me if you are contacting us about:
-1. General clinic information (hours, services, directions)
-2. Current symptoms / New appointment query
-3. Follow-up from a recent visit
-
-Please respond with the number (1, 2, or 3)."""
-    # Set the flag indicating clarification is needed
-    return {"messages": [AIMessage(content=prompt)], "needs_clarification": True, "context": None}
-
-def process_clarification_node(state: ChatState):
-    """Node to process the user's response to the clarification question."""
-    print("--- Executing Process Clarification Node ---")
-    last_message = state["messages"][-1].content.strip()
-    status = None
-    follow_up_message = ""
-
-    if last_message == "1":
-        status = "pre"
-        follow_up_message = "Great, what information about the clinic are you looking for?"
-    elif last_message == "2":
-        status = "during"
-        # The symptom node will handle the specific welcome for symptom collection
-        # follow_up_message = f"Okay, let's discuss your symptoms for {CLINIC_CONFIG['doctor_name']}. Can you start by telling me what {CLINIC_CONFIG['procedure']} symptoms bring you in today?"
-    elif last_message == "3":
-        status = "post"
-        # The follow-up node will handle the specific welcome for follow-up
-        # follow_up_message = "Alright, let's discuss your follow-up. Based on your prescription, have you been taking your medications as prescribed?"
+    if previous_appointment and previous_appointment.get("symptom-summary"):
+        response = episode_check_chain.invoke({
+            "previous_summary": previous_appointment.get("symptom-summary"),
+            "current_message": current_message
+        })
+        return {"messages": [AIMessage(content=f"Is this related to your previous visit for {previous_appointment.get('symptom-summary')}? Please answer 'yes' or 'no'.")], "same_episode_response": response.strip().lower()}
     else:
-        # Invalid response, ask again by setting needs_clarification
-         return {
-             "messages": [AIMessage(content="I'm sorry, I didn't quite understand that. Please reply with just the number 1, 2, or 3.")],
-             "needs_clarification": True, # Signal to ask again
-             "patient_status": None # Keep status as None
-         }
+        # Should not happen based on routing, but fallback to symptom gathering
+        return {"messages": [AIMessage(content="Let's discuss your current symptoms.")], "same_episode_response": "no"}
 
-    # Valid response, update status and clear flag
-    # No need to return a follow_up_message here, the graph will route to the correct node which generates its own message.
-    return {
-        "patient_status": status,
-        "needs_clarification": False,
-        # "messages": [AIMessage(content=follow_up_message)] if follow_up_message else [] # Let the next node handle the message
-    }
 
+def process_episode_response_node(state: ChatState):
+    """Node to process the user's response to the same episode question."""
+    print("--- Executing Process Episode Response Node ---")
+    if state.get("same_episode_response") == "yes":
+        previous_appointment = next((appt for appt in state.get("appointment_data", {}).get("appointments", []) if appt.get("appt-status") == "completed" and appt.get("doctor_name") == state.get("configurable", {}).get("doctor_name")), None)
+        if previous_appointment:
+            return {
+                "messages": [AIMessage(content="Okay, we will continue with the details from your previous visit.")],
+                "prescription": previous_appointment.get("prescrption"),
+                "symptom-summary": previous_appointment.get("symptom-summary"),
+                "patient_status": "during" # Set status to trigger symptom node
+            }
+        else:
+            return {"messages": [AIMessage(content="There was an issue retrieving your previous appointment details. Let's start with your current symptoms.")], "patient_status": "during"}
+    else:
+        return {"messages": [AIMessage(content="Okay, let's start by discussing your current symptoms.")], "patient_status": "during"}
 
 # ---- Cell 18 ----
 # ====================
 # Graph Edges & Routing Logic
 # ====================
 
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
 
-def route_logic(state: ChatState, config: RunnableConfig) -> Literal["clarify", "process_clarify", "get_info", "symptom", "followup"]:
-    """ Determines the next node to execute based on appointment data."""
-    print(f"--- Routing Logic: Status='{state.get('patient_status')}', Needs Clarification='{state.get('needs_clarification')}' ---")
+ROUTER_PROMPT = ChatPromptTemplate.from_template("""You are a routing agent that determines the next step in a conversation based on the current state and available appointment information.
 
-    # Check if the state indicates clarification was just asked (needs_clarification=True)
-    if state.get("needs_clarification"):
-        return "process_clarify"
-    
-    # Get current time
-    current_time = datetime.now(timezone.utc)
-    
-    # Extract relevant appointments
-    appointment_data = config.get("appointment_data", {}) # Get appointment_data from config
+Here is the current patient status: {patient_status}
+Here is information about future appointments (if any): {future_appointments}
+Here is information about past appointments (if any): {past_appointments}
+The user's last message was: {last_message}
+The user's first message in this conversation was: {first_message}
+The doctor associated with this conversation is: {doctor_name}
+
+Based on these rules, decide which of the following actions should be taken next:
+- get_info: Answer a general information query.
+- symptom: Collect information about the user's current symptoms.
+- followup: Conduct a post-appointment follow-up.
+
+Rules:
+1. If the visitor is coming from the website (first message is "Hello {doctor_name}") and no previous appointments with {doctor_name}, then route to 'get_info'.
+2. If there is a future appointment (less than 48 hours) with {doctor_name} and no *completed* previous appointments with {doctor_name}, then route to 'symptom'.
+3. If there is a future appointment (less than 48 hours) with {doctor_name} AND a previous appointment with {doctor_name}, then ask if it's the same episode. Respond with 'same_episode_check'.
+4. If there is a previous appointment with {doctor_name} and no future appointment with {doctor_name}, then route to 'followup'.
+5. Otherwise, route to 'get_info' as the default.
+
+Return ONLY the name of the next action. Do not include any other text.
+""")
+
+episode_check_prompt = ChatPromptTemplate.from_template("""Is the user's current query about the same medical episode as their previous appointment? Respond with 'yes' or 'no' only.
+
+Previous appointment summary: {previous_summary}
+Current user message: {current_message}
+""")
+episode_check_chain = episode_check_prompt | llm | StrOutputParser()
+
+
+router_chain = ROUTER_PROMPT | llm | StrOutputParser()
+def route_logic(state: ChatState, config: RunnableConfig) -> Literal["get_info", "symptom", "followup", "same_episode_check"]:
+    """ Determines the next node to execute using an LLM based on business rules."""
+    print(f"--- LLM Routing Logic: Status='{state.get('patient_status')}' ---")
+    print(f"Config received by route_logic: {config}")
+    print(f"Initial state in route_logic: {state}")
+
+    route_config = state.get('route_config')
+    if not route_config:
+        actual_config = config.get('config', {})
+        route_config = actual_config.get('route_config', {})
+
+    doctor_name = route_config.get('doctor_name')  # Get from route_config first
+    if not doctor_name:
+        doctor_name = config.get('configurable', {}).get('doctor_name') # Fallback to config
+    appointment_data = state.get('appointment_data', {})  # Get from state
+    print(f"Doctor Name inside route_logic: {doctor_name}")
+    print(f"Appointment Data inside route_logic: {appointment_data}")
+
     future_appointments = [
         appt for appt in appointment_data.get("appointments", [])
-        if appt["appt-status"] == "booked" and 
-           (datetime.fromisoformat(appt["appt-datetime"]) - current_time).total_seconds() < 48*3600
+        if appt.get("appt_status") == "booked" and appt.get("doctor_name") == doctor_name and
+           (datetime.fromisoformat(appt.get("appt_datetime")) - datetime.now(timezone.utc)).total_seconds() < 48 * 3600
     ]
     past_appointments = [
         appt for appt in appointment_data.get("appointments", [])
-        if appt["appt-status"] == "completed"
+        if appt.get("appt_status") == "completed" and appt.get("doctor_name") == doctor_name
     ]
+    last_message = state["messages"][-1].content if state["messages"] else ""
+    first_message = state["messages"][0].content if state["messages"] else ""
 
-    # Routing logic based on appointment data
-    if not past_appointments and not future_appointments:
-        # No appointments found - use Q&A bot
-        print("Routing -> get_info")
-        return "get_info"
-    
-    if future_appointments:
-        if not past_appointments:
-            # First time visitor with future appointment - start symptom collection
-            print("Routing -> symptom")
-            return "symptom"
+    route = router_chain.invoke({
+        "patient_status": state.get("patient_status"),
+        "future_appointments": future_appointments,
+        "past_appointments": past_appointments,
+        "last_message": last_message,
+        "first_message": first_message,
+        "doctor_name": doctor_name,
+        "messages": state.get("messages"),
+        "appointment_data": state.get("appointment_data"),
+    })
+    print(f"Future Appointments: {future_appointments}")
+    print(f"Past Appointments: {past_appointments}")
+    print(f"LLM Routing -> {route}")
+    return route
+
+
+
+
+def same_episode_check_node(state: ChatState):
+    """Node to ask the user if the current issue is the same episode."""
+    print("--- Executing Same Episode Check Node ---")
+    previous_appointment = next((appt for appt in state.get("appointment_data", {}).get("appointments", []) if appt.get("appt-status") == "completed" and appt.get("doctor_name") == state.get("configurable", {}).get("doctor_name")), None)
+    current_message = state["messages"][-1].content if state["messages"] else ""
+
+    if previous_appointment and previous_appointment.get("symptom-summary"):
+        response = episode_check_chain.invoke({
+            "previous_summary": previous_appointment.get("symptom-summary"),
+            "current_message": current_message
+        })
+        return {"messages": [AIMessage(content=f"Is this related to your previous visit for {previous_appointment.get('symptom-summary')}? Please answer 'yes' or 'no'.")], "same_episode_response": response.strip().lower()}
+    else:
+        # Should not happen based on routing, but fallback to symptom gathering
+        return {"messages": [AIMessage(content="Let's discuss your current symptoms.")], "same_episode_response": "no"}
+
+
+def process_episode_response_node(state: ChatState):
+    """Node to process the user's response to the same episode question."""
+    print("--- Executing Process Episode Response Node ---")
+    if state.get("same_episode_response") == "yes":
+        previous_appointment = next((appt for appt in state.get("appointment_data", {}).get("appointments", []) if appt.get("appt-status") == "completed" and appt.get("doctor_name") == state.get("configurable", {}).get("doctor_name")), None)
+        if previous_appointment:
+            return {
+                "messages": [AIMessage(content="Okay, we will continue with the details from your previous visit.")],
+                "prescription": previous_appointment.get("prescrption"),
+                "symptom-summary": previous_appointment.get("symptom-summary"),
+                "patient_status": "during" # Set status to trigger symptom node
+            }
         else:
-            # Check if same episode
-            same_episode = classifier_chain.invoke({
-                "query": f"Is this appointment part of the same episode as previous? Current symptoms: {appointment_data.get('current_symptoms')}, Previous summary: {past_appointments[0].get('symptom-summary')}"
-            }).strip().lower()
-            
-            if same_episode == "yes":
-                # Use previous summary and prescription
-                state["prescription"] = past_appointments[0].get("prescrption")
-                state["symptom-summary"] = past_appointments[0].get("symptom-summary")
-            print("Routing -> symptom")
-            return "symptom"
-    
-    if past_appointments and not future_appointments:
-        # Past appointment with no future appointments - use followup bot
-        state["prescription"] = past_appointments[0].get("prescrption")
-        print("Routing -> followup")
-        return "followup"
-
-    # Default to clarification
-    print("Routing -> clarify (No matching condition)")
-    return "clarify"
+            return {"messages": [AIMessage(content="There was an issue retrieving your previous appointment details. Let's start with your current symptoms.")], "patient_status": "during"}
+    else:
+        return {"messages": [AIMessage(content="Okay, let's start by discussing your current symptoms.")], "patient_status": "during"}
 
 # ---- Cell 19 ----
 # ====================
@@ -627,37 +659,32 @@ def route_logic(state: ChatState, config: RunnableConfig) -> Literal["clarify", 
 workflow = StateGraph(ChatState)
 
 # Define nodes
-workflow.add_node("clarify", clarify_node)
-workflow.add_node("process_clarify", process_clarification_node)
 workflow.add_node("get_info", get_info_node)
 workflow.add_node("symptom", symptom_node)
 workflow.add_node("followup", followup_node)
+workflow.add_node("same_episode_check", same_episode_check_node)
+workflow.add_node("process_episode_response", process_episode_response_node)
 
 # Define edges
 workflow.set_conditional_entry_point(
     route_logic,
     {
-        "clarify": "clarify",
-        "process_clarify": "process_clarify", # Should not happen on entry, but for completeness
         "get_info": "get_info",
         "symptom": "symptom",
         "followup": "followup",
+        "same_episode_check": "same_episode_check"
     }
 )
 
-# After asking for clarification, wait for user input
-workflow.add_edge("clarify", END)
+# After asking for same episode check, process the response
+workflow.add_edge("same_episode_check", "process_episode_response")
 
-# After processing clarification, route to the correct bot node
+# Route after processing the episode response
 workflow.add_conditional_edges(
-    "process_clarify",
-    # Route based on the status determined in process_clarification_node
-    lambda state: state.get("patient_status") if state.get("patient_status") else "clarify",
+    "process_episode_response",
+    lambda state: state.get("patient_status"),
     {
-        "pre": "get_info",
-        "during": "symptom",
-        "post": "followup",
-        "clarify": "clarify" # If processing failed, ask again
+        "during": "symptom"
     }
 )
 
@@ -673,74 +700,4 @@ workflow.add_edge("followup", END)
 memory = MemorySaver()
 app = workflow.compile(checkpointer=memory)
 print("Graph compiled successfully.")
-
-
-
-# ---- Cell 21 ----
-# ====================
-# Conversation Execution Logic (Corrected)
-# ====================
-def run_conversation():
-    """ Runs the chatbot conversation loop."""
-    thread_id = input("Enter a unique thread ID for this conversation (e.g., patient123): ")
-    config = {"configurable": {"thread_id": thread_id}}
-    print(f"\nStarting/Resuming conversation with thread ID: {thread_id}")
-    print("Type 'exit' or 'quit' to end the conversation.")
-
-    # Get appointment data
-    appointment_data = get_appointment_data(thread_id)
-    
-    # Get the initial state from the checkpointer or start fresh
-    current_state = app.get_state(config)
-
-    if current_state and current_state.values.get("messages"):
-        last_ai_message = next((msg for msg in reversed(current_state.values["messages"]) if isinstance(msg, AIMessage)), None)
-        if last_ai_message:
-            print(f"\nAssistant: {last_ai_message.content}")
-        else:
-            initial_state = app.invoke({}, config)
-            if initial_state and initial_state.get("messages"):
-                print(f"\nAssistant: {initial_state['messages'][-1].content}")
-            else:
-                print("\nAssistant: Hello! How can I help you today?")
-    else:
-        initial_state = app.invoke({}, config)
-        if initial_state and initial_state.get("messages"):
-            print(f"\nAssistant: {initial_state['messages'][-1].content}")
-        else:
-            print("\nAssistant: Hello! How can I help you today?")
-
-    while True:
-        query = input("Patient: ").strip()
-        if query.lower() in ["exit", "quit"]:
-            print("\nAssistant: Goodbye!")
-            break
-
-        input_data = {"messages": [HumanMessage(content=query)]}
-        state = app.invoke(input_data, config)
-        
-        if state and state.get("messages"):
-            last_ai_message = next((msg for msg in reversed(state["messages"]) if isinstance(msg, AIMessage)), None)
-            if last_ai_message:
-                print(f"\nAssistant: {last_ai_message.content}")
-            else:
-                print("\nAssistant: (No response generated)")
-        else:
-            print("\nAssistant: I encountered an issue processing that. Could you please try again?")
-
-
-
-# ---- Cell 22 ----
-if __name__ == "__main__":
-    # Ensure RAG data setup is complete before starting conversation
-    # Check if retrievers were initialized successfully
-    if retriever_dim and retriever_cls and doctor_retriever:
-        print("\nAll retrievers initialized. Starting conversation loop...")
-        run_conversation()
-    else:
-        print("\nCould not initialize all data retrievers. Exiting.")
-        if not retriever_dim: print("- Symptom dimension retriever failed.")
-        if not retriever_cls: print("- Symptom classification retriever failed.")
-        if not doctor_retriever: print("- Doctor info retriever failed.")
-
 
