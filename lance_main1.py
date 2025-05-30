@@ -271,30 +271,23 @@ retriever_cls = vector_store_cls.as_retriever(search_kwargs={"k": 2})
 # Define a type for the appointment data structure
 AppointmentData = Dict[str, any] # ADD THIS LINE
 class ChatState(TypedDict):
+    """
+    Represents the state of the chat, including messages, patient status,
+    and now, appointment data.  Derives from dict.
+    """
     messages: List[BaseMessage]
     patient_status: Optional[Literal["pre", "during", "post"]] = None
-    appointment_data: Optional[AppointmentData] = None
-    prescription: Optional[str] = None 
-    symptom_summary: Optional[str] = None 
-    doctor_name: Optional[str] = None 
+    appointment_data: Optional[AppointmentData] = None # Add appointment_data to the state
+
 
 # ---- Cell 16 ----
 # ====================
 # Bot Chains
 # ====================
 
-# ---- Cell 16 ----
-
-def format_docs(docs: Sequence[Document]) -> str:
-    """Helper function to format retrieved documents."""
-    if not docs:
-        return "No context retrieved."
-    return "\n\n".join(doc.page_content for doc in docs)
-
-
 # 1. Get-Info Bot (RAG)
-# MODIFY the prompt to directly use MessagesPlaceholder and remove explicit 'input' from the prompt
-GET_INFO_SYSTEM_PROMPT = """You are a clinic information assistant for {clinic_name}.
+get_info_prompt = ChatPromptTemplate.from_messages([
+    ("system", """You are a clinic information assistant for {clinic_name}.
 Use the following retrieved context about the clinic and doctor to answer questions:
 {context}
 
@@ -303,25 +296,39 @@ Clinic Details (Fallback if context is missing):
 - Doctor: {doctor_name}
 - Services: {services}
 
+Conversation History:
+{history}
+
 Rules:
 1. Answer questions concisely based *primarily* on the retrieved context if available.
 2. Use the fallback details only if the context doesn't provide the answer.
 3. If unsure or asked for medical advice, politely state you cannot answer and offer to connect to human staff.
 4. Base your answer on the current question, considering the history for context.
 
-"""
-
-get_info_prompt = ChatPromptTemplate.from_messages([
-    ("system", GET_INFO_SYSTEM_PROMPT),
-    MessagesPlaceholder(variable_name="messages") # <-- ADD THIS LINE to pass full message history
+Current Question: {input}
+Answer:"""),
+    # MessagesPlaceholder(variable_name="messages") # History is now passed explicitly
 ])
+
+def format_docs(docs: Sequence[Document]) -> str:
+    """Helper function to format retrieved documents."""
+    if not docs:
+        return "No context retrieved."
+    return "\n\n".join(doc.page_content for doc in docs)
+
+def format_history(msgs: Sequence[BaseMessage]) -> str:
+    """Helper function to format message history."""
+    return "\n".join(f"{msg.type.upper()}: {msg.content}" for msg in msgs)
+
 
 get_info_chain = (
     RunnablePassthrough.assign(
         context=lambda x: format_docs(x["context"]),
-        # REMOVE 'history' and 'input' lambda functions, as 'messages' will directly handle this
+        history=lambda x: format_history(x["messages"][:-1]), # Pass history excluding current input
+        input=lambda x: x["messages"][-1].content, # Isolate current input
+        # Provide fallback values from CLINIC_INFO
         clinic_name=lambda _: CLINIC_INFO["name"],
-        doctor_name=lambda _: CLINIC_INFO["doctor"], # Use general clinic doctor for info bot
+        doctor_name=lambda _: CLINIC_INFO["doctor"],
         services=lambda _: CLINIC_INFO["services"]
     )
     | get_info_prompt
@@ -331,7 +338,6 @@ get_info_chain = (
 
 
 # 2. Symptom Collector Bot (MODIFIED PROMPT)
-# MODIFY the prompt to directly use MessagesPlaceholder and remove explicit 'input'
 SYMPTOM_SYSTEM_PROMPT = """You are a secretary bot named Genie at {clinic_name}. Your goal is to gather allergy symptoms by asking **one question at a time**.
 
 **CRITICAL INSTRUCTIONS:**
@@ -341,7 +347,7 @@ SYMPTOM_SYSTEM_PROMPT = """You are a secretary bot named Genie at {clinic_name}.
 4.  Use the Retrieved Context below *only* as a general guide for the *types* of questions relevant to the mentioned symptoms, but **prioritize the Conversation History** to determine the *specific* question to ask next.
 
 **Conversation Flow:**
-* **First Interaction:** If the history indicates you haven't started collecting symptoms yet, begin with: "Okay, let's discuss your symptoms for {doctor_name}. Can you start by telling me what {procedure} symptoms bring you in today?"
+* **First Interaction:** If the history shows you haven't started collecting symptoms yet, begin with: "Okay, let's discuss your symptoms for {doctor_name}. Can you start by telling me what {procedure} symptoms bring you in today?"
 * **Subsequent Interactions:** Based on the **Conversation History**, identify the last question asked and the user's answer. Ask the **next relevant question** from the standard symptom details list below.
 
 **Standard Symptom Details to Ask (One at a time, in order, checking history first):**
@@ -373,31 +379,42 @@ SYMPTOM_SYSTEM_PROMPT = """You are a secretary bot named Genie at {clinic_name}.
 **Retrieved Context (General Guidance Only):**
 {context}
 
-"""
+**Conversation History (Use this to decide the NEXT question):**
+{history}
+
+**Current User Input:** {input}
+
+**Your Response (Next Question or Summary):**"""
+
 
 symptom_prompt = ChatPromptTemplate.from_messages([
     ("system", SYMPTOM_SYSTEM_PROMPT),
-    MessagesPlaceholder(variable_name="messages") # <-- ADD THIS LINE to pass full message history
+    # MessagesPlaceholder(variable_name="messages") # History passed explicitly
 ])
 
+# Chain for symptom collection
 symptom_chain = (
     RunnablePassthrough.assign(
         context=lambda x: format_docs(x["context"]),
-        # REMOVE 'history' and 'input' lambda functions
+        history=lambda x: format_history(x["messages"][:-1]), # Pass history excluding current input
+        input=lambda x: x["messages"][-1].content, # Isolate current input
+        # Provide config values
         clinic_name=lambda _: CLINIC_CONFIG["clinic_name"],
         procedure=lambda _: CLINIC_CONFIG["procedure"],
-        doctor_name=lambda _: CLINIC_CONFIG["doctor_name"] # Ensure doctor_name is passed
+        doctor_name=lambda _: CLINIC_CONFIG["doctor_name"]
     )
     | symptom_prompt
     | llm
     | StrOutputParser()
 )
 
-# 3. Follow-Up Bot (MODIFIED PROMPT)
-# MODIFY the prompt to directly use MessagesPlaceholder and remove explicit 'input'
+# 3. Follow-Up Bot (No changes needed here for repetition issue)
 FOLLOWUP_SYSTEM_PROMPT = """You are a post-appointment follow-up assistant for {clinic_name}.
 Use the patient's prescription details:
 {prescription}
+
+Conversation History:
+{history}
 
 Ask about:
 1. Medication adherence
@@ -412,86 +429,71 @@ Rules:
 - Never modify the prescription or give medical advice.
 - Escalate complex issues or new symptoms by suggesting the user contact the clinic directly.
 
-"""
+Current Input: {input}
+Next Question:"""
+
 
 followup_prompt = ChatPromptTemplate.from_messages([
     ("system", FOLLOWUP_SYSTEM_PROMPT),
-    MessagesPlaceholder(variable_name="messages") # <-- ADD THIS LINE to pass full message history
+    # MessagesPlaceholder(variable_name="messages") # History passed explicitly
 ])
 
 followup_chain = (
     RunnablePassthrough.assign(
-        prescription=lambda x: x.get("prescription", SAMPLE_PRESCRIPTION),
-        # REMOVE 'history' and 'input' lambda functions
-        clinic_name=lambda _: CLINIC_INFO["name"]
+        prescription=lambda x: x.get("prescription", "No prescription details available."), # Use state's prescription
+        history=lambda x: format_history(x["messages"][:-1]), # Pass history excluding current input
+        input=lambda x: x["messages"][-1].content, # Isolate current input
+        clinic_name=lambda _: CLINIC_INFO["name"] # Use general clinic name
     )
     | followup_prompt
     | llm
     | StrOutputParser()
 )
 
-episode_check_prompt = ChatPromptTemplate.from_template("""Is the user's current query about the same medical episode as their previous appointment? Respond with 'yes' or 'no' only.
-
-Previous appointment summary: {previous_summary}
-Current user message: {current_message}
-""")
-episode_check_chain = episode_check_prompt | llm | StrOutputParser()
 
 # ---- Cell 17 ----
 # ====================
 # Graph Nodes
 # ====================
 
-# ---- Cell 17 ----
-
 def get_info_node(state: ChatState):
     """Node to handle general information requests."""
     print("--- Executing Get Info Node ---")
-    query = state["messages"][-1].content # Keep query for context retrieval if needed
+    query = state["messages"][-1].content
+    # Retrieve context using the doctor_retriever
     context_docs = doctor_retriever.invoke(query) if doctor_retriever else []
-    
-    # MODIFIED: Pass state["messages"] directly to the chain
-    response_content = get_info_chain.invoke({
-        "messages": state["messages"], # Pass the full message history
+    # Invoke the chain with the current state messages and retrieved context
+    response = get_info_chain.invoke({
+        "messages": state["messages"],
         "context": context_docs
     })
-    
-    # LangGraph will handle adding the new AIMessage to the state's messages
-    # The return here is a dictionary representing the state *updates*
-    return {"messages": state["messages"] + [AIMessage(content=response_content)]}
-
+    return {"messages": [AIMessage(content=response)], "context": context_docs} # Update context in state if needed
 
 def symptom_node(state: ChatState):
     """Node to handle symptom collection."""
     print("--- Executing Symptom Node ---")
     query = state["messages"][-1].content
+    # Retrieve context from symptom retrievers
     context_dim = retriever_dim.invoke(query) if retriever_dim else []
     context_cls = retriever_cls.invoke(query) if retriever_cls else []
     combined_context = context_dim + context_cls
-    
-    # MODIFIED: Pass state["messages"] directly to the chain
-    response_content = symptom_chain.invoke({
+    # Invoke the symptom chain with the full message history and combined context
+    response = symptom_chain.invoke({
         "messages": state["messages"], # Pass the full message history
         "context": combined_context
+        # Clinic config is now passed within the chain setup
     })
-    
-    # Return the updated messages. LangGraph's add_messages (implicitly or explicitly in your setup)
-    # handles merging this with the existing state.
-    return {"messages": state["messages"] + [AIMessage(content=response_content)]}
-
+    return {"messages": [AIMessage(content=response)], "context": combined_context} # Update context
 
 def followup_node(state: ChatState):
     """Node to handle post-appointment follow-up."""
     print("--- Executing Follow-up Node ---")
-    
-    # MODIFIED: Pass state["messages"] directly to the chain
-    response_content = followup_chain.invoke({
+    # Invoke the follow-up chain with the full message history and prescription from state
+    response = followup_chain.invoke({
         "messages": state["messages"], # Pass the full message history
         "prescription": state.get("prescription", SAMPLE_PRESCRIPTION) # Get prescription from state
     })
-    
-    return {"messages": state["messages"] + [AIMessage(content=response_content)]}
-
+    return {"messages": [AIMessage(content=response)], "context": None} # No specific context retrieved here
 
 def same_episode_check_node(state: ChatState):
     """Node to ask the user if the current issue is the same episode."""
@@ -532,81 +534,137 @@ def process_episode_response_node(state: ChatState):
 # Graph Edges & Routing Logic
 # ====================
 
-# 1. Get Info Bot Graph
-get_info_workflow = StateGraph(ChatState)
-get_info_workflow.add_node("get_info", get_info_node)
-get_info_workflow.set_entry_point("get_info")
-get_info_workflow.add_edge("get_info", END)
-get_info_app = get_info_workflow.compile(checkpointer=MemorySaver()) # Keep this line
-print("Get Info Bot Graph compiled.")
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
 
-# 2. Symptom Collector Bot Graph
-symptom_workflow = StateGraph(ChatState)
-symptom_workflow.add_node("symptom", symptom_node)
-symptom_workflow.set_entry_point("symptom")
-symptom_workflow.add_edge("symptom", END)
-symptom_app = symptom_workflow.compile(checkpointer=MemorySaver()) # Keep this line
-print("Symptom Bot Graph compiled.")
+ROUTER_PROMPT = ChatPromptTemplate.from_template("""You are a routing agent that determines the next step in a conversation based on the current state and available appointment information.
 
-# 3. Follow-Up Bot Graph
-followup_workflow = StateGraph(ChatState)
-followup_workflow.add_node("followup", followup_node)
-followup_workflow.set_entry_point("followup")
-followup_workflow.add_edge("followup", END)
-followup_app = followup_workflow.compile(checkpointer=MemorySaver()) # Keep this line
-print("Follow-up Bot Graph compiled.")
+Here is the current patient status: {patient_status}
+Here is information about future appointments (if any): {future_appointments}
+Here is information about past appointments (if any): {past_appointments}
+The user's last message was: {last_message}
+The user's first message in this conversation was: {first_message}
+The doctor associated with this conversation is: {doctor_name}
+
+Based on these rules, decide which of the following actions should be taken next:
+- get_info: Answer a general information query.
+- symptom: Collect information about the user's current symptoms.
+- followup: Conduct a post-appointment follow-up.
+
+Rules:
+1. If the visitor is coming from the website (first message is "Hello {doctor_name}") and no previous appointments with {doctor_name}, then route to 'get_info'.
+2. If there is a future appointment (less than 48 hours) with {doctor_name} and no *completed* previous appointments with {doctor_name}, then route to 'symptom'.
+3. If there is a future appointment (less than 48 hours) with {doctor_name} AND a previous appointment with {doctor_name}, then ask if it's the same episode. Respond with 'same_episode_check'.
+4. If there is a previous appointment with {doctor_name} and no future appointment with {doctor_name}, then route to 'followup'.
+5. Otherwise, route to 'get_info' as the default.
+
+Return ONLY the name of the next action. Do not include any other text.
+""")
+
+episode_check_prompt = ChatPromptTemplate.from_template("""Is the user's current query about the same medical episode as their previous appointment? Respond with 'yes' or 'no' only.
+
+Previous appointment summary: {previous_summary}
+Current user message: {current_message}
+""")
+episode_check_chain = episode_check_prompt | llm | StrOutputParser()
 
 
-def decide_bot_route(state: ChatState, config: RunnableConfig) -> Literal["get_info", "symptom", "followup", "same_episode_check"]:
-    """ Determines which bot to use based on business rules. """
-    print(f"--- Routing Logic for Bot Selection ---")
+router_chain = ROUTER_PROMPT | llm | StrOutputParser()
+def route_logic(state: ChatState, config: RunnableConfig) -> Literal["get_info", "symptom", "followup", "same_episode_check"]:
+    """ Determines the next node to execute using an LLM based on business rules."""
+    print(f"--- LLM Routing Logic: Status='{state.get('patient_status')}' ---")
+    print(f"Config received by route_logic: {config}")
+    print(f"Initial state in route_logic: {state}")
 
-    # Extract relevant info from config and state
-    doctor_name = config.get('configurable', {}).get('doctor_name')
-    appointment_data = state.get('appointment_data', {})
+    route_config = state.get('route_config')
+    if not route_config:
+        actual_config = config.get('config', {})
+        route_config = actual_config.get('route_config', {})
 
-    current_time = datetime.now(timezone.utc)
-
-    # Filter appointments for the specific doctor
-    doctor_appointments = [
-        appt for appt in appointment_data.get("appointments", [])
-        if appt.get("doctor_name") == doctor_name
-    ]
+    doctor_name = route_config.get('doctor_name')  # Get from route_config first
+    if not doctor_name:
+        doctor_name = config.get('configurable', {}).get('doctor_name') # Fallback to config
+    appointment_data = state.get('appointment_data', {})  # Get from state
+    print(f"Doctor Name inside route_logic: {doctor_name}")
+    print(f"Appointment Data inside route_logic: {appointment_data}")
 
     future_appointments = [
-        appt for appt in doctor_appointments
-        if appt.get("appt_status") == "booked" and
-           (datetime.fromisoformat(appt.get("appt_datetime")).replace(tzinfo=timezone.utc) - current_time).total_seconds() < 48 * 3600
+        appt for appt in appointment_data.get("appointments", [])
+        if appt.get("appt_status") == "booked" and appt.get("doctor_name") == doctor_name and
+           (datetime.fromisoformat(appt.get("appt_datetime")) - datetime.now(timezone.utc)).total_seconds() < 48 * 3600
     ]
     past_appointments = [
-        appt for appt in doctor_appointments
-        if appt.get("appt_status") == "completed"
+        appt for appt in appointment_data.get("appointments", [])
+        if appt.get("appt_status") == "completed" and appt.get("doctor_name") == doctor_name
     ]
-
+    last_message = state["messages"][-1].content if state["messages"] else ""
     first_message = state["messages"][0].content if state["messages"] else ""
 
-    # Apply the routing rules
-    # Rule 1: If the visitor is coming from website (message is "Hello Dr. Balachandra BV") and no previous appointments from that doctor then fire get info bot
-    if first_message.startswith(f"Hello {doctor_name}") and not past_appointments:
-        print("Bot Router -> get_info (Rule 1)")
-        return "get_info"
+    route = router_chain.invoke({
+        "patient_status": state.get("patient_status"),
+        "future_appointments": future_appointments,
+        "past_appointments": past_appointments,
+        "last_message": last_message,
+        "first_message": first_message,
+        "doctor_name": doctor_name,
+        "messages": state.get("messages"),
+        "appointment_data": state.get("appointment_data"),
+    })
+    print(f"Future Appointments: {future_appointments}")
+    print(f"Past Appointments: {past_appointments}")
+    print(f"LLM Routing -> {route}")
+    return route
 
-    # Rule 2: if there is a near term future appointment (less than 48 hours) for Dr and there is no previous appointment  fire the symptom collection bot
-    if future_appointments and not past_appointments:
-        print("Bot Router -> symptom (Rule 2)")
-        return "symptom"
 
-    # Rule 3: if there is a near term future appointment (less then 48 hours) for Dr and a previous appointment too then ask if it same episode or new episode .
-    # This function only decides we *need* to ask the question. app.py will handle the actual asking.
-    if future_appointments and past_appointments:
-        print("Bot Router -> same_episode_check (Rule 3)")
-        return "same_episode_check"
 
-    # Rule 4: if there is a previous appointment and no near term future appointment then fire the followup bot
-    if past_appointments and not future_appointments:
-        print("Bot Router -> followup (Rule 4)")
-        return "followup"
 
-    # Default fallback if no specific rule matches (e.g., general query)
-    print("Bot Router -> get_info (Default)")
-    return "get_info"
+
+# ---- Cell 19 ----
+# ====================
+# State Graph Definition
+# ====================
+workflow = StateGraph(ChatState)
+
+# Define nodes
+workflow.add_node("get_info", get_info_node)
+workflow.add_node("symptom", symptom_node)
+workflow.add_node("followup", followup_node)
+workflow.add_node("same_episode_check", same_episode_check_node)
+workflow.add_node("process_episode_response", process_episode_response_node)
+
+# Define edges
+workflow.set_conditional_entry_point(
+    route_logic,
+    {
+        "get_info": "get_info",
+        "symptom": "symptom",
+        "followup": "followup",
+        "same_episode_check": "same_episode_check"
+    }
+)
+
+# After asking for same episode check, process the response
+workflow.add_edge("same_episode_check", "process_episode_response")
+
+# Route after processing the episode response
+workflow.add_conditional_edges(
+    "process_episode_response",
+    lambda state: state.get("patient_status"),
+    {
+        "during": "symptom"
+    }
+)
+
+# After a bot node finishes, END the current run (wait for next user input)
+workflow.add_edge("get_info", END)
+workflow.add_edge("symptom", END)
+workflow.add_edge("followup", END)
+
+
+# ====================
+# Compile the Graph with Memory
+# ====================
+memory = MemorySaver()
+app = workflow.compile(checkpointer=memory)
+print("Graph compiled successfully.")
+
