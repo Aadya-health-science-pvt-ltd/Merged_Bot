@@ -7,6 +7,9 @@ from typing import Sequence
 from retrieval.lancedb_manager import setup_doctor_info_retriever, get_retriever
 from config.constants import SAMPLE_PRESCRIPTION
 
+from utils.general_utils import needs_retrieval 
+from models.chains import classifier_chain       
+
 # Initialize retrievers (these would ideally be passed or managed in a factory)
 doctor_retriever = setup_doctor_info_retriever()
 retriever_dim = get_retriever("symptom_dimensions")
@@ -25,25 +28,37 @@ def get_info_node(state: ChatState):
     
     return {"messages": state["messages"] + [AIMessage(content=response_content)]}
 
+
+
 def symptom_node(state: ChatState):
     """Node to handle symptom collection."""
     print("--- Executing Symptom Node ---")
     query = state["messages"][-1].content
-    context_dim = retriever_dim.invoke(query) if retriever_dim else []
-    context_cls = retriever_cls.invoke(query) if retriever_cls else []
-    #@karan need help in filtering the data that is retrieved based on the following
-    # Doctor speciality -- need this passed as initial data for the bot. Filter based on doctor's speciality and appointment procedure.
-    # patient dimension -- child / adult and also male / femaele -- this is not being currently not being passed.
     
-    combined_context = context_dim + context_cls
+    combined_context = [] # Initialize as empty
+    
+    # --- Integration of needs_retrieval ---
+    if needs_retrieval(query, classifier_chain):
+        print("Retrieval deemed necessary for symptom query.")
+        context_dim = retriever_dim.invoke(query) if retriever_dim else []
+        context_cls = retriever_cls.invoke(query) if retriever_cls else []
+        combined_context = context_dim + context_cls
+    else:
+        print("Retrieval not necessary for symptom query, proceeding without extra context.")
+    # --- End of needs_retrieval integration ---
+
+    print("Query: ",query)
+    print(f"Combined context documents: {len(combined_context)} found.")
+    print(f"Context documents (metadata only): {[doc.metadata for doc in combined_context]}")
+    print(f"Context documents (full): {[doc for doc in combined_context]}") # Keep this line for full debugging if needed
     
     response_content = symptom_chain.invoke({
         "messages": state["messages"],
-        "context": combined_context
+        "context": combined_context # This will be empty if needs_retrieval was False
     })
+    print("Response content: ", response_content)
     
     return {"messages": state["messages"] + [AIMessage(content=response_content)]}
-
 def followup_node(state: ChatState):
     """Node to handle post-appointment follow-up."""
     print("--- Executing Follow-up Node ---")

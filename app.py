@@ -233,6 +233,6 @@ def send_message():
 
 if __name__ == '__main__':
     # Set the Flask port from environment variable or default to 5007
-    port = int(os.getenv('FLASK_RUN_PORT', 5007))
+    port = int(os.getenv('FLASK_RUN_PORT', 5009))
     # Run the Flask application
     app.run(host='0.0.0.0', port=port, threaded=True, debug=True)
