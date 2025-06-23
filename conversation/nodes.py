@@ -32,7 +32,7 @@ def symptom_node(state: ChatState):
     context_dim = retriever_dim.invoke(query) if retriever_dim else []
     context_cls = retriever_cls.invoke(query) if retriever_cls else []
     #@karan need help in filtering the data that is retrieved based on the following
-    # Doctor speciality -- need this passed as initial data for the bot
+    # Doctor speciality -- need this passed as initial data for the bot. Filter based on doctor's speciality and appointment procedure.
     # patient dimension -- child / adult and also male / femaele -- this is not being currently not being passed.
     
     combined_context = context_dim + context_cls
