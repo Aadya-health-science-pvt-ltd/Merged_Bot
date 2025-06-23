@@ -13,5 +13,8 @@ class ChatState(TypedDict):
     prescription: Optional[str] = None
     symptom_summary: Optional[str] = None
     doctor_name: Optional[str] = None
-    same_episode_response: Optional[str] = None # Added for routing logic
-
+    same_episode_response: Optional[str] = None
+    age_group: Optional[str] = None         # Add this
+    gender: Optional[str] = None            # Add this
+    symptom: Optional[str] = None           # Add this
+    specialty: Optional[str] = None         # Add this

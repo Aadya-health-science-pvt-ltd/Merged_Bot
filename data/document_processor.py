@@ -8,9 +8,12 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import WebBaseLoader
 from config.constants import BATCH_SIZE, DOCTOR_WEBSITE_URL
 from config.llm_config import embeddings
+import os
 
-def process_batch(df, chain, sheet_name, specialty="paediatrics"):
-    """Process a batch of rows with error handling."""
+def process_batch(df, chain, sheet_name, file_path):
+    """Process a batch of rows with error handling. Extracts specialty from workbook filename."""
+    # Extract specialty from the workbook filename (without extension)
+    specialty = os.path.splitext(os.path.basename(file_path))[0].lower()
     results = []
     for _, row in df.iterrows():
         try:
@@ -29,9 +32,8 @@ def process_batch(df, chain, sheet_name, specialty="paediatrics"):
         except Exception as e:
             print(f"Error processing row: {e}")
     return results
-
 def process_sheets(file_path, chain, sheet_filter):
-    """Process all sheets with batch parallel processing."""
+    """Process all sheets with batch parallel processing. Passes workbook path to process_batch."""
     xls = pd.ExcelFile(file_path)
     all_docs = []
     
@@ -40,12 +42,13 @@ def process_sheets(file_path, chain, sheet_filter):
         for sheet_name in xls.sheet_names:
             if not sheet_filter(sheet_name):
                 continue
-                
+
             df = xls.parse(sheet_name)
             for i in range(0, len(df), BATCH_SIZE):
                 batch = df.iloc[i:i+BATCH_SIZE]
+                # Pass file_path as workbook_path to process_batch
                 futures.append(
-                    executor.submit(process_batch, batch, chain, sheet_name)
+                    executor.submit(process_batch, batch, chain, sheet_name, file_path)
                 )
         
         for future in futures:

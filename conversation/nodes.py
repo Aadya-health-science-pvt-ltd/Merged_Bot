@@ -30,34 +30,75 @@ def get_info_node(state: ChatState):
 
 
 
+
 def symptom_node(state: ChatState):
-    """Node to handle symptom collection."""
     print("--- Executing Symptom Node ---")
     query = state["messages"][-1].content
-    
-    combined_context = [] # Initialize as empty
-    
-    # --- Integration of needs_retrieval ---
+
+    # Extract metadata from state or user profile for this query
+    age_group = state.get("age_group")
+    gender = state.get("gender")
+    symptom = state.get("symptom")
+    specialty = state.get("specialty")
+
+    # Build the SQL WHERE clause for LanceDB filtering
+    where_clauses = []
+    if age_group:
+        where_clauses.append(f"is_child = '{age_group}'")
+    if gender:
+        where_clauses.append(f"gender = '{gender}'")
+    if symptom:
+        where_clauses.append(f"symptom = '{symptom}'")
+    if specialty:
+        where_clauses.append(f"specialty = '{specialty}'")
+    where_str = " AND ".join(where_clauses) if where_clauses else None
+
+    combined_context = []
     if needs_retrieval(query, classifier_chain):
         print("Retrieval deemed necessary for symptom query.")
-        context_dim = retriever_dim.invoke(query) if retriever_dim else []
-        context_cls = retriever_cls.invoke(query) if retriever_cls else []
+        # Use LanceDB's SQL filtering if possible
+        context_dim = []
+        context_cls = []
+        if where_str and hasattr(retriever_dim, "vectorstore") and hasattr(retriever_dim.vectorstore, "table"):
+            # Direct LanceDB table access for advanced filtering
+            query_vector = retriever_dim.embed_query(query)
+            context_dim = [
+                Document(page_content=row["text"], metadata=row["metadata"])
+                for row in retriever_dim.vectorstore.table.search(query_vector)
+                    .where(where_str)
+                    .limit(5)
+                    .to_list()
+            ]
+        else:
+            context_dim = retriever_dim.invoke(query) if retriever_dim else []
+
+        if where_str and hasattr(retriever_cls, "vectorstore") and hasattr(retriever_cls.vectorstore, "table"):
+            query_vector = retriever_cls.embed_query(query)
+            context_cls = [
+                Document(page_content=row["text"], metadata=row["metadata"])
+                for row in retriever_cls.vectorstore.table.search(query_vector)
+                    .where(where_str)
+                    .limit(5)
+                    .to_list()
+            ]
+        else:
+            context_cls = retriever_cls.invoke(query) if retriever_cls else []
+
         combined_context = context_dim + context_cls
     else:
         print("Retrieval not necessary for symptom query, proceeding without extra context.")
-    # --- End of needs_retrieval integration ---
 
-    print("Query: ",query)
+    print("Query: ", query)
     print(f"Combined context documents: {len(combined_context)} found.")
     print(f"Context documents (metadata only): {[doc.metadata for doc in combined_context]}")
-    print(f"Context documents (full): {[doc for doc in combined_context]}") # Keep this line for full debugging if needed
-    
+    print(f"Context documents (full): {[doc for doc in combined_context]}")
+
     response_content = symptom_chain.invoke({
         "messages": state["messages"],
-        "context": combined_context # This will be empty if needs_retrieval was False
+        "context": combined_context
     })
     print("Response content: ", response_content)
-    
+
     return {"messages": state["messages"] + [AIMessage(content=response_content)]}
 def followup_node(state: ChatState):
     """Node to handle post-appointment follow-up."""

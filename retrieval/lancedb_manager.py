@@ -4,7 +4,7 @@ from config.llm_config import db, embeddings
 from embeddings.embedding_utils import embed_documents_for_lancedb, embed_documents_from_langchain_docs
 from data.document_processor import load_and_split_doctor_info
 
-def store_documents_once(docs, table_name, specialty="paediatrics"):
+def store_documents_once(docs, table_name):
     try:
         db.open_table(table_name)
         print(f"Table {table_name} already exists. No need to embed documents again.")
@@ -13,14 +13,14 @@ def store_documents_once(docs, table_name, specialty="paediatrics"):
         print(f"Creating new table {table_name}...")
     
     if hasattr(docs[0], 'page_content'):
-        data = embed_documents_from_langchain_docs(docs, specialty)
+        data = embed_documents_from_langchain_docs(docs)
     else:
-        data = embed_documents_for_lancedb(docs, specialty)
+        data = embed_documents_for_lancedb(docs)
     
     tbl = db.create_table(table_name, data=data)
     return tbl
 
-def setup_doctor_info_retriever(specialty="paediatrics"):
+def setup_doctor_info_retriever():
     try:
         db.open_table("doctor_info")
         print("Doctor info table already exists. No need to embed documents again.")
@@ -29,8 +29,9 @@ def setup_doctor_info_retriever(specialty="paediatrics"):
         print(f"Creating new doctor info table: {e}")
 
     splits = load_and_split_doctor_info()
-    store_documents_once(splits, "doctor_info", specialty)
+    store_documents_once(splits, "doctor_info")
     return LanceDB(connection=db, table_name="doctor_info", embedding=embeddings).as_retriever()
+
 
 def rank_documents_by_relevance(docs, query, user_age_group="child"):
     ranked_docs = []

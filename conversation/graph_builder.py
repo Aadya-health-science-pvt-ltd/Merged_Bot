@@ -16,9 +16,9 @@ def build_get_info_graph():
 def build_symptom_graph():
     """Builds and compiles the graph for the Symptom Collector bot."""
     symptom_workflow = StateGraph(ChatState)
-    symptom_workflow.add_node("symptom", symptom_node)
-    symptom_workflow.set_entry_point("symptom")
-    symptom_workflow.add_edge("symptom", END)
+    symptom_workflow.add_node("symptom_node", symptom_node)
+    symptom_workflow.set_entry_point("symptom_node")
+    symptom_workflow.add_edge("symptom_node", END)
     return symptom_workflow.compile(checkpointer=MemorySaver())
 
 def build_followup_graph():

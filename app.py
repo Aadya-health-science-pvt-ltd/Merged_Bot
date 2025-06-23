@@ -34,7 +34,7 @@ def start_conversation():
         return jsonify({'error': 'thread_id and doctor_name are required'}), 400
 
     # Ensure LanceDB tables and retrievers are set up (idempotent operations)
-    lance_main.setup_doctor_info_retriever(data.get('specialty', 'paediatrics'))
+    lance_main.setup_doctor_info_retriever()
 
     # Initialize the conversation state for the new thread_id
     conversations[thread_id] = {
@@ -47,12 +47,15 @@ def start_conversation():
             'doctor_name': doctor_name,
             'clinic_name': data.get('clinic_name', lance_main.CLINIC_INFO["name"]),
             'specialty': data.get('specialty', 'paediatrics'),
-            'current_thread_history': [], # Stores ALL messages (Human and AI) for this thread
-            'is_initial_message': True,   # Flag to trigger initial routing decision
-            'current_bot_key': None,      # Stores the key ('get_info', 'symptom', 'followup') of the active bot
-            'ask_same_episode': False,    # Flag to indicate if the "same episode?" question is pending
-            'prescription': data.get('prescription', lance_main.SAMPLE_PRESCRIPTION), # Initial prescription, can be updated
-            'symptom_summary': None       # To store previous symptom summary for Rule 3 continuity
+            'age_group': data.get('age_group'),      # <-- Add this
+            'gender': data.get('gender'),            # <-- Add this
+            'symptom': data.get('symptom'),          # <-- Add this
+            'current_thread_history': [],
+            'is_initial_message': True,
+            'current_bot_key': None,
+            'ask_same_episode': False,
+            'prescription': data.get('prescription', lance_main.SAMPLE_PRESCRIPTION),
+            'symptom_summary': None
         },
         'appointment_data': data.get('appointment_data', {}) # Store appointment details
     }
@@ -103,14 +106,23 @@ def send_message():
     bot_selection_message = None # Message indicating which bot was selected
     reply = '' # The AI's response
 
+    # Update metadata if provided in the message payload
+    for key in ['age_group', 'gender', 'symptom', 'specialty']:
+        if data.get(key) is not None:
+            conv['configurable'][key] = data[key]
+
     # --- Prepare ChatState and RunnableConfig for bot invocation ---
     # The ChatState passed to invoke() should contain the full history for the bot's context.
     current_chat_state = lance_main.ChatState(
-        messages=conv['configurable']['current_thread_history'], # Pass the ENTIRE history
+        messages=conv['configurable']['current_thread_history'],
         patient_status=conv['configurable'].get('patient_status'),
         appointment_data=conv['appointment_data'],
         prescription=conv['configurable']['prescription'],
-        symptom_summary=conv['configurable']['symptom_summary'] # Pass for Rule 3 continuity
+        symptom_summary=conv['configurable']['symptom_summary'],
+        age_group=conv['configurable'].get('age_group'),      # <-- Add this
+        gender=conv['configurable'].get('gender'),            # <-- Add this
+        symptom=conv['configurable'].get('symptom'),          # <-- Add this
+        specialty=conv['configurable'].get('specialty')       # <-- Add this
     )
     # RunnableConfig for LangGraph's checkpointer (memory) and other configurable parameters
     runnable_config_obj = RunnableConfig(configurable={

@@ -46,7 +46,8 @@ get_info_prompt = ChatPromptTemplate.from_messages([
     MessagesPlaceholder(variable_name="messages")
 ])
 
-SYMPTOM_SYSTEM_PROMPT = """RETRIEVED MEDICAL CONTEXT (Follow this guidance precisely):
+SYMPTOM_SYSTEM_PROMPT = """RETRIEVED MEDICAL CONTEXT (Follow the context and guidance precisely to ask the questions ):
+
 {context}
 
 You are a secretary bot named Genie at {clinic_name}. Your primary goal is to follow the RETRIEVED MEDICAL CONTEXT above to gather {procedure} symptoms systematically.
