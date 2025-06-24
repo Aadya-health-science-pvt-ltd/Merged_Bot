@@ -3,7 +3,7 @@ from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor
-
+from utils.general_utils import extract_specialty_and_age
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 from langchain_core.runnables import RunnableConfig
 from typing import List, Dict, Optional, Literal # Make sure Literal is here for decide_bot_route return type
@@ -19,6 +19,7 @@ executor = ThreadPoolExecutor(max_workers=os.cpu_count() * 2)
 conversations = {}
 SESSION_TIMEOUT = timedelta(minutes=15) # Session expires after 15 minutes of inactivity
 
+
 @app.route('/start_conversation', methods=['POST'])
 def start_conversation():
     """
@@ -29,6 +30,17 @@ def start_conversation():
     data = request.get_json() or {}
     thread_id = data.get('thread_id')
     doctor_name = data.get('doctor_name')
+    consultation_type = data.get('consultation_type')
+    specialty = data.get('specialty')
+    age_group = data.get('age_group')
+
+    # If consultation_type is provided, extract specialty and age_group from it
+    if consultation_type:
+        specialty, age_group = extract_specialty_and_age(consultation_type)
+    else:
+        # fallback to provided values or defaults
+        specialty = specialty or 'paediatrics'
+        age_group = age_group or None
     
     if not thread_id or not doctor_name:
         return jsonify({'error': 'thread_id and doctor_name are required'}), 400
@@ -46,10 +58,10 @@ def start_conversation():
             'thread_id': thread_id,
             'doctor_name': doctor_name,
             'clinic_name': data.get('clinic_name', lance_main.CLINIC_INFO["name"]),
-            'specialty': data.get('specialty', 'paediatrics'),
-            'age_group': data.get('age_group'),      # <-- Add this
-            'gender': data.get('gender'),            # <-- Add this
-            'symptom': data.get('symptom'),          # <-- Add this
+            'specialty': specialty,
+            'age_group': age_group,    
+            'gender': data.get('gender'),
+            'consultation_type': consultation_type,         
             'current_thread_history': [],
             'is_initial_message': True,
             'current_bot_key': None,
