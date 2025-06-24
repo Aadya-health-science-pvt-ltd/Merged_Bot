@@ -58,7 +58,7 @@ def rank_documents_by_relevance(docs, query, user_age_group="child"):
     ranked_docs.sort(key=lambda x: x[1], reverse=True)
     return [doc for doc, score in ranked_docs]
 
-def get_retriever(table_name: str, k: int = 4):
+def get_retriever(table_name: str, k: int = 1):
     vector_store = LanceDB(connection=db, embedding=embeddings, table_name=table_name)
     base_retriever = vector_store.as_retriever(search_kwargs={"k": k})
     
