@@ -15,6 +15,5 @@ class ChatState(TypedDict):
     doctor_name: Optional[str] = None
     same_episode_response: Optional[str] = None
     age_group: Optional[str] = None         # Add this
-    gender: Optional[str] = None            # Add this
-    symptom: Optional[str] = None           # Add this
+    gender: Optional[str] = None            # Add this          # Add this
     specialty: Optional[str] = None         # Add this

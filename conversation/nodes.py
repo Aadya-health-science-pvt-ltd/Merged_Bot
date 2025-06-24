@@ -38,7 +38,6 @@ def symptom_node(state: ChatState):
     # Extract metadata from state or user profile for this query
     age_group = state.get("age_group")
     gender = state.get("gender")
-    symptom = state.get("symptom")
     specialty = state.get("specialty")
 
     # Build the SQL WHERE clause for LanceDB filtering
@@ -47,8 +46,6 @@ def symptom_node(state: ChatState):
         where_clauses.append(f"is_child = '{age_group}'")
     if gender:
         where_clauses.append(f"gender = '{gender}'")
-    if symptom:
-        where_clauses.append(f"symptom = '{symptom}'")
     if specialty:
         where_clauses.append(f"specialty = '{specialty}'")
     where_str = " AND ".join(where_clauses) if where_clauses else None

@@ -107,7 +107,7 @@ def send_message():
     reply = '' # The AI's response
 
     # Update metadata if provided in the message payload
-    for key in ['age_group', 'gender', 'symptom', 'specialty']:
+    for key in ['age_group', 'gender', 'specialty']:
         if data.get(key) is not None:
             conv['configurable'][key] = data[key]
 
@@ -119,10 +119,9 @@ def send_message():
         appointment_data=conv['appointment_data'],
         prescription=conv['configurable']['prescription'],
         symptom_summary=conv['configurable']['symptom_summary'],
-        age_group=conv['configurable'].get('age_group'),      # <-- Add this
-        gender=conv['configurable'].get('gender'),            # <-- Add this
-        symptom=conv['configurable'].get('symptom'),          # <-- Add this
-        specialty=conv['configurable'].get('specialty')       # <-- Add this
+        age_group=conv['configurable'].get('age_group'),      
+        gender=conv['configurable'].get('gender'),            
+        specialty=conv['configurable'].get('specialty')       
     )
     # RunnableConfig for LangGraph's checkpointer (memory) and other configurable parameters
     runnable_config_obj = RunnableConfig(configurable={
