@@ -11,3 +11,6 @@ openpyxl
 lancedb
 beautifulsoup4
 flask
+requests
+tiktoken
+langchain-faiss

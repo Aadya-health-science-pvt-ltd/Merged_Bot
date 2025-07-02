@@ -3,7 +3,7 @@ from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor
-from utils.general_utils import extract_specialty_and_age
+from utils.general_utils import extract_specialty_and_age, build_or_load_faiss
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 from langchain_core.runnables import RunnableConfig
 from typing import List, Dict, Optional, Literal # Make sure Literal is here for decide_bot_route return type
@@ -45,9 +45,6 @@ def start_conversation():
     if not thread_id or not doctor_name:
         return jsonify({'error': 'thread_id and doctor_name are required'}), 400
 
-    # Ensure LanceDB tables and retrievers are set up (idempotent operations)
-    lance_main.setup_doctor_info_retriever()
-
     # Initialize the conversation state for the new thread_id
     conversations[thread_id] = {
         'get_info_app': lance_main.get_info_app,   # Reference to the compiled Get Info bot
@@ -67,7 +64,9 @@ def start_conversation():
             'current_bot_key': None,
             'ask_same_episode': False,
             'prescription': data.get('prescription', lance_main.SAMPLE_PRESCRIPTION),
-            'symptom_summary': None
+            'symptom_summary': None,
+            'doctor_info_url': data.get('doctor_info_url', None),
+            'services': data.get('services', ""),
         },
         'appointment_data': data.get('appointment_data', {}) # Store appointment details
     }
@@ -84,6 +83,7 @@ def send_message():
     and managing the conversation history.
     """
     data = request.get_json() or {}
+    print("Received /message payload:", data)  # Debug print
     thread_id = data.get('thread_id')
     user_message = data.get('message')
 
@@ -102,12 +102,22 @@ def send_message():
 
     conv['last_activity'] = datetime.now(timezone.utc) # Update last activity timestamp
 
-    # Update appointment_data if provided in the message payload (can be dynamic)
+    # Update all dynamic fields from payload BEFORE constructing ChatState
     if data.get('appointment_data'):
         conv['appointment_data'] = data['appointment_data']
-    # Update prescription if provided (can be dynamic)
     if data.get('prescription'):
         conv['configurable']['prescription'] = data['prescription']
+    if data.get('doctor_info_url'):
+        conv['configurable']['doctor_info_url'] = data['doctor_info_url']
+    if data.get('clinic_name'):
+        conv['configurable']['clinic_name'] = data['clinic_name']
+    if data.get('doctor_name'):
+        conv['configurable']['doctor_name'] = data['doctor_name']
+    if data.get('services'):
+        conv['configurable']['services'] = data['services']
+    for key in ['age_group', 'gender', 'specialty']:
+        if data.get(key) is not None:
+            conv['configurable'][key] = data[key]
 
     user_message_obj = HumanMessage(content=user_message)
     
@@ -117,11 +127,6 @@ def send_message():
     selected_app = None # This will hold the LangGraph app to invoke (e.g., lance_main.symptom_app)
     bot_selection_message = None # Message indicating which bot was selected
     reply = '' # The AI's response
-
-    # Update metadata if provided in the message payload
-    for key in ['age_group', 'gender', 'specialty']:
-        if data.get(key) is not None:
-            conv['configurable'][key] = data[key]
 
     # --- Prepare ChatState and RunnableConfig for bot invocation ---
     # The ChatState passed to invoke() should contain the full history for the bot's context.
@@ -133,7 +138,11 @@ def send_message():
         symptom_summary=conv['configurable']['symptom_summary'],
         age_group=conv['configurable'].get('age_group'),      
         gender=conv['configurable'].get('gender'),            
-        specialty=conv['configurable'].get('specialty')       
+        specialty=conv['configurable'].get('specialty'),
+        doctor_info_url=conv['configurable'].get('doctor_info_url'),
+        clinic_name=conv['configurable'].get('clinic_name'),
+        doctor_name=conv['configurable'].get('doctor_name'),
+        services=conv['configurable'].get('services', "")
     )
     # RunnableConfig for LangGraph's checkpointer (memory) and other configurable parameters
     runnable_config_obj = RunnableConfig(configurable={
@@ -253,6 +262,19 @@ def send_message():
         response_data['bot_selection'] = bot_selection_message
 
     return jsonify(response_data), 200
+
+@app.route('/embed_website', methods=['POST'])
+def embed_website():
+    data = request.get_json() or {}
+    url = data.get('url')
+    if not url:
+        return jsonify({'success': False, 'error': 'No URL provided'}), 400
+    try:
+        # Always force rebuild for explicit embedding
+        build_or_load_faiss(url, force_rebuild=True)
+        return jsonify({'success': True}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
     # Set the Flask port from environment variable or default to 5007

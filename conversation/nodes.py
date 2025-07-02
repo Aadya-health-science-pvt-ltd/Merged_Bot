@@ -2,101 +2,38 @@
 from conversation.chat_state import ChatState
 from models.chains import get_info_chain, symptom_chain, followup_chain, episode_check_chain
 from langchain_core.messages import AIMessage
-from langchain_core.documents import Document # Import for type hinting
-from typing import Sequence
-from retrieval.lancedb_manager import setup_doctor_info_retriever, get_retriever
+from typing import Dict, Any
 from config.constants import SAMPLE_PRESCRIPTION
-
-from utils.general_utils import needs_retrieval 
-from models.chains import classifier_chain       
-
-# Initialize retrievers (these would ideally be passed or managed in a factory)
-doctor_retriever = setup_doctor_info_retriever()
-retriever_dim = get_retriever("symptom_dimensions")
-retriever_cls = get_retriever("symptom_classifications")
+from utils.general_utils import retrieve_relevant_chunks
 
 def get_info_node(state: ChatState):
     """Node to handle general information requests."""
     print("--- Executing Get Info Node ---")
-    query = state["messages"][-1].content
-    context_docs = doctor_retriever.invoke(query) if doctor_retriever else []
-    
+    query = str(state["messages"][-1].content)
+    # Always retrieve context, regardless of doctor_info_url
+    context_chunks = retrieve_relevant_chunks(None, query, k=4)
+    print(f"Retrieved {len(context_chunks)} context chunks")
+    for i, chunk in enumerate(context_chunks):
+        print(f"Chunk {i}: {chunk[:200]}...")
+    context = "\n\n".join(context_chunks)
+    print(f"Final context passed to LLM: {context[:500]}...")
     response_content = get_info_chain.invoke({
         "messages": state["messages"],
-        "context": context_docs
+        "context": context,
+        "clinic_name": state.get("clinic_name", ""),
+        "doctor_name": state.get("doctor_name", ""),
+        "services": state.get("services", "")
     })
-    
     return {"messages": state["messages"] + [AIMessage(content=response_content)]}
-
-
-
 
 def symptom_node(state: ChatState):
-    print("--- Executing Symptom Node ---")
-    query = state["messages"][-1].content
-
-    # Extract metadata from state or user profile for this query
-    age_group = state.get("age_group")
-    gender = state.get("gender")
-    specialty = state.get("specialty")
-
-    # Build the SQL WHERE clause for LanceDB filtering
-    where_clauses = []
-    if age_group:
-        where_clauses.append(f"is_child = '{age_group}'")
-    if gender:
-        where_clauses.append(f"gender = '{gender}'")
-    if specialty:
-        where_clauses.append(f"specialty = '{specialty}'")
-    where_str = " AND ".join(where_clauses) if where_clauses else None
-
-    combined_context = []
-    if needs_retrieval(query, classifier_chain):
-        print("Retrieval deemed necessary for symptom query.")
-        # Use LanceDB's SQL filtering if possible
-        context_dim = []
-        context_cls = []
-        if where_str and hasattr(retriever_dim, "vectorstore") and hasattr(retriever_dim.vectorstore, "table"):
-            # Direct LanceDB table access for advanced filtering
-            query_vector = retriever_dim.embed_query(query)
-            context_dim = [
-                Document(page_content=row["text"], metadata=row["metadata"])
-                for row in retriever_dim.vectorstore.table.search(query_vector)
-                    .where(where_str)
-                    .limit(5)
-                    .to_list()
-            ]
-        else:
-            context_dim = retriever_dim.invoke(query) if retriever_dim else []
-
-        if where_str and hasattr(retriever_cls, "vectorstore") and hasattr(retriever_cls.vectorstore, "table"):
-            query_vector = retriever_cls.embed_query(query)
-            context_cls = [
-                Document(page_content=row["text"], metadata=row["metadata"])
-                for row in retriever_cls.vectorstore.table.search(query_vector)
-                    .where(where_str)
-                    .limit(5)
-                    .to_list()
-            ]
-        else:
-            context_cls = retriever_cls.invoke(query) if retriever_cls else []
-
-        combined_context = context_dim + context_cls
-    else:
-        print("Retrieval not necessary for symptom query, proceeding without extra context.")
-
-    print("Query: ", query)
-    print(f"Combined context documents: {len(combined_context)} found.")
-    print(f"Context documents (metadata only): {[doc.metadata for doc in combined_context]}")
-    print(f"Context documents (full): {[doc for doc in combined_context]}")
-
+    print("--- Executing Symptom Node (No RAG) ---")
     response_content = symptom_chain.invoke({
-        "messages": state["messages"],
-        "context": combined_context
+        "messages": state["messages"]
     })
     print("Response content: ", response_content)
-
     return {"messages": state["messages"] + [AIMessage(content=response_content)]}
+
 def followup_node(state: ChatState):
     """Node to handle post-appointment follow-up."""
     print("--- Executing Follow-up Node ---")
@@ -115,12 +52,20 @@ def same_episode_check_node(state: ChatState):
     # Ensure configurable is accessed correctly and safe
     doctor_name_from_config = state.get("configurable", {}).get("doctor_name")
     
-    previous_appointment = next((
-        appt for appt in state.get("appointment_data", {}).get("appointments", []) 
-        if appt.get("appt-status") == "completed" and appt.get("doctor_name") == doctor_name_from_config
-    ), None)
+    appointment_data = state.get("appointment_data", {})
+    appointments_raw = appointment_data.get("appointments", []) if appointment_data else []
+    appointments = appointments_raw if isinstance(appointments_raw, list) else []
     
-    current_message = state["messages"][-1].content if state["messages"] else ""
+    # Find previous appointment with proper type handling
+    previous_appointment = None
+    for appt in appointments:
+        if (isinstance(appt, dict) and 
+            appt.get("appt-status") == "completed" and 
+            appt.get("doctor_name") == doctor_name_from_config):
+            previous_appointment = appt
+            break
+    
+    current_message = str(state["messages"][-1].content) if state["messages"] else ""
 
     if previous_appointment and previous_appointment.get("symptom-summary"):
         response = episode_check_chain.invoke({
@@ -136,10 +81,20 @@ def process_episode_response_node(state: ChatState):
     print("--- Executing Process Episode Response Node ---")
     if state.get("same_episode_response") == "yes":
         doctor_name_from_config = state.get("configurable", {}).get("doctor_name")
-        previous_appointment = next((
-            appt for appt in state.get("appointment_data", {}).get("appointments", []) 
-            if appt.get("appt-status") == "completed" and appt.get("doctor_name") == doctor_name_from_config
-        ), None)
+        
+        appointment_data = state.get("appointment_data", {})
+        appointments_raw = appointment_data.get("appointments", []) if appointment_data else []
+        appointments = appointments_raw if isinstance(appointments_raw, list) else []
+        
+        # Find previous appointment with proper type handling
+        previous_appointment = None
+        for appt in appointments:
+            if (isinstance(appt, dict) and 
+                appt.get("appt-status") == "completed" and 
+                appt.get("doctor_name") == doctor_name_from_config):
+                previous_appointment = appt
+                break
+                
         if previous_appointment:
             return {
                 "messages": state["messages"] + [AIMessage(content="Okay, we will continue with the details from your previous visit.")],
