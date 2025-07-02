@@ -6,12 +6,7 @@ from typing import TypedDict, Annotated, Sequence, Literal, Optional, List, Dict
 from langchain_core.messages import BaseMessage
 
 AppointmentData = Dict[str, any]
-class ChatState:
-    def __init__(self, **kwargs):
-        for k, v in kwargs.items():
-            setattr(self, k, v)
-    def get(self, key, default=None):
-        return getattr(self, key, default)
+
 
 class ChatState(TypedDict):
     messages: List[BaseMessage]
