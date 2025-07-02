@@ -2,9 +2,10 @@ import streamlit as st
 import requests
 import uuid
 from datetime import datetime
+import os
 
 # Backend URL (adjust if needed)
-BACKEND_URL = "http://localhost:5009"
+BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:5009")
 
 st.set_page_config(page_title="Medical Symptom Bot", page_icon="💬", layout="centered")
 st.title("💬 Medical Symptom Bot (Streamlit)")
