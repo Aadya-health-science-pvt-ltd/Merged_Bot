@@ -33,6 +33,8 @@ def start_conversation():
     consultation_type = data.get('consultation_type')
     specialty = data.get('specialty')
     age_group = data.get('age_group')
+    age = data.get('age')
+    vaccine_visit = data.get('vaccine_visit')
 
     # If consultation_type is provided, extract specialty and age_group from it
     if consultation_type:
@@ -56,9 +58,11 @@ def start_conversation():
             'doctor_name': doctor_name,
             'clinic_name': data.get('clinic_name', lance_main.CLINIC_INFO["name"]),
             'specialty': specialty,
-            'age_group': age_group,    
+            'age_group': age_group,
+            'age': age,
             'gender': data.get('gender'),
-            'consultation_type': consultation_type,         
+            'consultation_type': consultation_type,
+            'vaccine_visit': vaccine_visit,
             'current_thread_history': [],
             'is_initial_message': True,
             'current_bot_key': None,
@@ -115,9 +119,13 @@ def send_message():
         conv['configurable']['doctor_name'] = data['doctor_name']
     if data.get('services'):
         conv['configurable']['services'] = data['services']
-    for key in ['age_group', 'gender', 'specialty']:
+    for key in ['age_group', 'age', 'gender', 'specialty', 'vaccine_visit']:
         if data.get(key) is not None:
             conv['configurable'][key] = data[key]
+
+    # Add symptom to state if present
+    if data.get('symptom'):
+        conv['configurable']['symptom'] = data['symptom']
 
     user_message_obj = HumanMessage(content=user_message)
     
@@ -136,8 +144,11 @@ def send_message():
         appointment_data=conv['appointment_data'],
         prescription=conv['configurable']['prescription'],
         symptom_summary=conv['configurable']['symptom_summary'],
-        age_group=conv['configurable'].get('age_group'),      
-        gender=conv['configurable'].get('gender'),            
+        age_group=conv['configurable'].get('age_group'),
+        age=conv['configurable'].get('age'),
+        gender=conv['configurable'].get('gender'),
+        vaccine_visit=conv['configurable'].get('vaccine_visit'),
+        symptom=conv['configurable'].get('symptom'),
         specialty=conv['configurable'].get('specialty'),
         doctor_info_url=conv['configurable'].get('doctor_info_url'),
         clinic_name=conv['configurable'].get('clinic_name'),

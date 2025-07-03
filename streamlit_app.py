@@ -30,6 +30,8 @@ if 'patient_info' not in st.session_state:
 def qa_wizard():
     steps = [
         ("doctor_name", "Enter the doctor's name:", "Dr. Balachandra BV"),
+        ("age", "Enter the patient's age (in months or years):", ""),
+        ("gender", "Select the patient's gender:", "male"),
         ("consultation_type", "Enter the consultation type:", "Child Allergy and Asthma Consultation"),
         ("specialty", "Enter the medical specialty:", "paediatrics"),
         ("clinic_name", "Enter the clinic name:", "Chirayu clinic"),
@@ -61,6 +63,8 @@ def qa_wizard():
                 st.session_state.qa_step += 1
                 st.rerun()
             return
+        elif key == "gender":
+            val = st.selectbox(question, ["male", "female", "other"], key=key)
         else:
             val = st.text_input(question, default, key=key)
         if st.button("Next"):
@@ -74,6 +78,8 @@ def qa_wizard():
         payload = {
             "thread_id": thread_id,
             "doctor_name": answers["doctor_name"],
+            "age": answers["age"],
+            "gender": answers["gender"],
             "consultation_type": answers["consultation_type"],
             "specialty": answers["specialty"],
             "clinic_name": answers["clinic_name"],
@@ -192,10 +198,14 @@ if st.session_state.conversation_started:
     user_input = st.text_area("Your message", key="user_input", height=70, disabled=(show_doctor_info_url and not st.session_state.website_embedded))
     if st.button("Send") and user_input.strip() and (not show_doctor_info_url or st.session_state.website_embedded):
         st.session_state.messages.append({"type": "user", "content": user_input})
+        patient_info = st.session_state.patient_info
         payload = {
             "thread_id": st.session_state.thread_id,
-            "message": user_input,
-            "specialty": st.session_state.patient_info.get("specialty"),
+            "age": patient_info.get("age"),
+            "gender": patient_info.get("gender"),
+            "vaccine_visit": "yes" if "vaccine" in patient_info.get("consultation_type", "").lower() else "no",
+            "symptom": user_input,
+            "specialty": patient_info.get("specialty"),
             "message_type": "human"
         }
         # Always include doctor_info_url for info queries after embedding
