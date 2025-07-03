@@ -5,7 +5,7 @@ from datetime import datetime
 import os
 
 # Backend URL (adjust if needed)
-BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:5009")
+BACKEND_URL = os.environ.get("BACKEND_URL", "https://merged-bot.onrender.com")
 
 st.set_page_config(page_title="Medical Assistant Bot", page_icon="💬", layout="centered")
 st.title("💬 Medical Assistant Bot (Streamlit)")
