@@ -1,6 +1,6 @@
 # conversation/nodes.py
 from conversation.chat_state import ChatState
-from models.chains import get_info_chain, symptom_chain, followup_chain, episode_check_chain, make_symptom_chain
+from models.chains import get_info_chain, followup_chain, episode_check_chain, make_symptom_chain
 from langchain_core.messages import AIMessage
 from typing import Dict, Any
 from config.constants import SAMPLE_PRESCRIPTION
