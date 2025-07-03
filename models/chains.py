@@ -8,6 +8,7 @@ from models.prompts import (
 from config.constants import SAMPLE_PRESCRIPTION
 from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
+import re
 
 def format_docs(docs):
     print("[DEBUG] Context passed to get_info prompt:", docs)
@@ -89,11 +90,31 @@ def make_symptom_chain(age, gender, vaccine_visit, symptom, prompt_override=None
         ("symptoms", lambda x: x.get("symptoms", "")),
         ("messages", lambda x: x.get("messages", [])),
     ]
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", prompt_text),
-        ("system", SYMPTOM_SUMMARY_PROMPT),
-        ("user", "{messages}")
-    ])
+    # Determine if this is a vaccine prompt
+    is_vaccine_prompt = False
+    if prompt_override is not None:
+        # Try to detect from the prompt_override string
+        is_vaccine_prompt = 'Vaccine Visit Bot' in prompt_text or re.search(r'vaccine_\d+[mwyy]', str(prompt_text))
+    else:
+        # Try to detect from the classifier category
+        if isinstance(prompt_text, str) and re.match(r'.*Vaccine Visit Bot.*', prompt_text):
+            is_vaccine_prompt = True
+        elif isinstance(prompt_text, str) and re.match(r'.*vaccine_\d+[mwyy].*', prompt_text):
+            is_vaccine_prompt = True
+    if is_vaccine_prompt:
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", prompt_text),
+            ("system", SYMPTOM_SUMMARY_PROMPT),
+            ("user", "{messages}")
+        ])
+    else:
+        # For non-vaccine prompts, use only a minimal summary instruction
+        minimal_summary = "At the end of the Q&A, generate a summary of the symptoms and relevant history for the doctor. Do NOT include headings like Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Autism/ADHD/Learning Disabilities, Physical Activity, Mental Wellbeing, or Pubertal Development unless this is a vaccine visit."
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", prompt_text),
+            ("system", minimal_summary),
+            ("user", "{messages}")
+        ])
     assign_dict = {k: v for k, v in prompt_vars}
     return RunnablePassthrough.assign(**assign_dict) | prompt | llm | StrOutputParser()
 
