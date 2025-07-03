@@ -53,7 +53,7 @@ Follow this logic to select the most appropriate prompt category:
 
 Return only the category name.
 Possible outputs:
-- "vaccine_{age_bucket}" (e.g., "vaccine_12m", "vaccine_10y", etc.)
+- "vaccine_<age_bucket>" (e.g., "vaccine_12m", "vaccine_10y", etc.)
 - "less_than_6_months"
 - "male_child"
 - "female_child"
@@ -76,20 +76,26 @@ def select_symptom_prompt(age, gender, vaccine_visit, symptom):
     return SYMPTOM_PROMPTS.get(category, SYMPTOM_PROMPTS["general_child"])
 
 # Dynamic symptom chain
-def make_symptom_chain(age, gender, vaccine_visit, symptom):
-    prompt_text = select_symptom_prompt(age, gender, vaccine_visit, symptom)
+def make_symptom_chain(age, gender, vaccine_visit, symptom, prompt_override=None):
+    if prompt_override is not None:
+        prompt_text = prompt_override
+    else:
+        prompt_text = select_symptom_prompt(age, gender, vaccine_visit, symptom)
+    prompt_vars = [
+        ("age", lambda x: x.get("age", "")),
+        ("gender", lambda x: x.get("gender", "")),
+        ("vaccine_visit", lambda x: x.get("vaccine_visit", "")),
+        ("symptom", lambda x: x.get("symptom", "")),
+        ("symptoms", lambda x: x.get("symptoms", "")),
+        ("messages", lambda x: x.get("messages", [])),
+    ]
     prompt = ChatPromptTemplate.from_messages([
         ("system", prompt_text),
         ("system", SYMPTOM_SUMMARY_PROMPT),
-        ("user", "{input}")
+        ("user", "{messages}")
     ])
-    return RunnablePassthrough.assign(
-        age=lambda x: x.get("age", ""),
-        gender=lambda x: x.get("gender", ""),
-        vaccine_visit=lambda x: x.get("vaccine_visit", ""),
-        symptom=lambda x: x.get("symptom", ""),
-        input=lambda x: x.get("input", "")
-    ) | prompt | llm | StrOutputParser()
+    assign_dict = {k: v for k, v in prompt_vars}
+    return RunnablePassthrough.assign(**assign_dict) | prompt | llm | StrOutputParser()
 
 followup_chain = (
     RunnablePassthrough.assign(

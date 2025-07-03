@@ -29,4 +29,17 @@ def build_followup_graph():
     followup_workflow.add_edge("followup", END)
     return followup_workflow.compile(checkpointer=MemorySaver())
 
+def debug_print_thread_state(graph, thread_id):
+    """Prints the latest state and full state history for a given thread_id."""
+    config = {"configurable": {"thread_id": thread_id}}
+    # Print latest state
+    latest_state = graph.get_state(config)
+    print(f"\n[DEBUG] Latest state for thread {thread_id}:")
+    print(latest_state)
+    # Print full state history
+    state_history = list(graph.get_state_history(config))
+    print(f"\n[DEBUG] State history for thread {thread_id}:")
+    for i, snapshot in enumerate(state_history):
+        print(f"Checkpoint {i}: {snapshot}\n")
+
 # Remove build_main_graph() from this file.

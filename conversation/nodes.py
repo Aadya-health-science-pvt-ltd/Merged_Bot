@@ -1,5 +1,5 @@
 # conversation/nodes.py
-from conversation.chat_state import ChatState
+from conversation.chat_state import ChatState, initialize_symptom_session
 from models.chains import get_info_chain, followup_chain, episode_check_chain, make_symptom_chain
 from langchain_core.messages import AIMessage
 from typing import Dict, Any
@@ -27,28 +27,22 @@ def get_info_node(state: ChatState):
     return {"messages": state["messages"] + [AIMessage(content=response_content)]}
 
 def symptom_node(state: ChatState):
-    print("--- Executing Symptom Node (Dynamic Prompts) ---")
-    # Extract relevant info from state
+    print("--- Executing Symptom Node (Chain Externalized, Serializable State) ---")
+    if "symptom_prompt" not in state or not state["symptom_prompt"]:
+        raise ValueError("Hi we are initializing the Bot. Please start by saying Hi :)")
+    from models.chains import make_symptom_chain
     age = state.get("age_group", "")
     gender = state.get("gender", "")
-    vaccine_visit = "yes" if "vaccine" in str(state.get("consultation_type", "")).lower() else "no"
-    # Assume the first user message after bot selection is the symptom
-    symptom = ""
-    for msg in state["messages"]:
-        if getattr(msg, "type", None) == "human" or getattr(msg, "role", None) == "user":
-            symptom = getattr(msg, "content", "")
-            break
-    print(f"[DEBUG] Symptom Node Inputs: age={age}, gender={gender}, vaccine_visit={vaccine_visit}, symptom={symptom}")
-    chain = make_symptom_chain(age, gender, vaccine_visit, symptom)
+    consultation_type = state.get("consultation_type", "")
+    symptom = state.get("symptoms", "")
+    chain = make_symptom_chain(age, gender, consultation_type, symptom, prompt_override=state["symptom_prompt"])
     response_content = chain.invoke({
         "age": age,
         "gender": gender,
-        "vaccine_visit": vaccine_visit,
+        "vaccine_visit": consultation_type,
         "symptom": symptom,
-        "input": symptom,
         "messages": state["messages"]
     })
-    print("Response content: ", response_content)
     return {"messages": state["messages"] + [AIMessage(content=response_content)]}
 
 def followup_node(state: ChatState):

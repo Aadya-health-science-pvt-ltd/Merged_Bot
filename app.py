@@ -7,14 +7,16 @@ from utils.general_utils import extract_specialty_and_age, build_or_load_faiss
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 from langchain_core.runnables import RunnableConfig
 from typing import List, Dict, Optional, Literal # Make sure Literal is here for decide_bot_route return type
+import typing
 
 import lance_main  # Import everything from lance_main
+from conversation.chat_state import initialize_symptom_session
 
 load_dotenv()
 
 app = Flask(__name__)
 
-executor = ThreadPoolExecutor(max_workers=os.cpu_count() * 2)
+executor = ThreadPoolExecutor(max_workers=(os.cpu_count() or 2) * 2)
 
 conversations = {}
 SESSION_TIMEOUT = timedelta(minutes=15) # Session expires after 15 minutes of inactivity
@@ -35,6 +37,7 @@ def start_conversation():
     age_group = data.get('age_group')
     age = data.get('age')
     vaccine_visit = data.get('vaccine_visit')
+    symptoms = data.get('symptoms')
 
     # If consultation_type is provided, extract specialty and age_group from it
     if consultation_type:
@@ -71,6 +74,7 @@ def start_conversation():
             'symptom_summary': None,
             'doctor_info_url': data.get('doctor_info_url', None),
             'services': data.get('services', ""),
+            'symptoms': symptoms,
         },
         'appointment_data': data.get('appointment_data', {}) # Store appointment details
     }
@@ -119,13 +123,13 @@ def send_message():
         conv['configurable']['doctor_name'] = data['doctor_name']
     if data.get('services'):
         conv['configurable']['services'] = data['services']
-    for key in ['age_group', 'age', 'gender', 'specialty', 'vaccine_visit']:
+    for key in ['age_group', 'age', 'gender', 'specialty', 'vaccine_visit', 'symptoms']:
         if data.get(key) is not None:
             conv['configurable'][key] = data[key]
 
-    # Add symptom to state if present
-    if data.get('symptom'):
-        conv['configurable']['symptom'] = data['symptom']
+    # Add symptoms to state if present
+    if data.get('symptoms'):
+        conv['configurable']['symptoms'] = data['symptoms']
 
     user_message_obj = HumanMessage(content=user_message)
     
@@ -138,23 +142,39 @@ def send_message():
 
     # --- Prepare ChatState and RunnableConfig for bot invocation ---
     # The ChatState passed to invoke() should contain the full history for the bot's context.
-    current_chat_state = lance_main.ChatState(
-        messages=conv['configurable']['current_thread_history'],
-        patient_status=conv['configurable'].get('patient_status'),
-        appointment_data=conv['appointment_data'],
-        prescription=conv['configurable']['prescription'],
-        symptom_summary=conv['configurable']['symptom_summary'],
-        age_group=conv['configurable'].get('age_group'),
-        age=conv['configurable'].get('age'),
-        gender=conv['configurable'].get('gender'),
-        vaccine_visit=conv['configurable'].get('vaccine_visit'),
-        symptom=conv['configurable'].get('symptom'),
-        specialty=conv['configurable'].get('specialty'),
-        doctor_info_url=conv['configurable'].get('doctor_info_url'),
-        clinic_name=conv['configurable'].get('clinic_name'),
-        doctor_name=conv['configurable'].get('doctor_name'),
-        services=conv['configurable'].get('services', "")
-    )
+    current_chat_state = typing.cast(lance_main.ChatState, {
+        "messages": conv['configurable']['current_thread_history'],
+        "patient_status": conv['configurable'].get('patient_status'),
+        "appointment_data": conv['appointment_data'],
+        "prescription": conv['configurable']['prescription'],
+        "symptom_summary": conv['configurable']['symptom_summary'],
+        "doctor_name": conv['configurable'].get('doctor_name'),
+        "same_episode_response": conv['configurable'].get('same_episode_response'),
+        "age_group": conv['configurable'].get('age_group'),
+        "age": conv['configurable'].get('age'),
+        "gender": conv['configurable'].get('gender'),
+        "vaccine_visit": conv['configurable'].get('vaccine_visit'),
+        "symptoms": conv['configurable'].get('symptoms'),
+        "specialty": conv['configurable'].get('specialty'),
+        "symptom_collection_phase": conv['configurable'].get('symptom_collection_phase'),
+        "collected_symptoms": conv['configurable'].get('collected_symptoms'),
+        "current_symptom_index": conv['configurable'].get('current_symptom_index'),
+        "current_question_index": conv['configurable'].get('current_question_index'),
+        "symptom_prompt": conv['configurable'].get('symptom_prompt'),
+        # Only include keys that are part of ChatState TypedDict
+    })
+
+    # Ensure symptom session is initialized before invoking the symptom bot
+    if (
+        (conv['configurable'].get('current_bot_key') == 'symptom' or selected_app == conv.get('symptom_app'))
+        and (not current_chat_state.get('symptom_prompt'))
+    ):
+        current_chat_state = initialize_symptom_session(current_chat_state)
+        conv['configurable']['symptom_prompt'] = current_chat_state.get('symptom_prompt')
+        print("[DEBUG] After initialize_symptom_session, symptom_prompt:", current_chat_state.get('symptom_prompt'))
+        current_chat_state['messages'].append(HumanMessage(content='start'))
+        current_chat_state['messages'].append(HumanMessage(content='Which bot are you or what can you assist me with?'))
+
     # RunnableConfig for LangGraph's checkpointer (memory) and other configurable parameters
     runnable_config_obj = RunnableConfig(configurable={
         "thread_id": thread_id, # CRITICAL: This links to the MemorySaver for each bot
@@ -286,6 +306,22 @@ def embed_website():
         return jsonify({'success': True}), 200
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+def process_quiz_wizard_submission(state):
+    # ... existing logic to populate state with quiz wizard data ...
+    state = initialize_symptom_session(state)
+    # ... continue with routing to symptom_node or storing state ...
+    return state
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    import traceback
+    print("Exception in Flask app:", traceback.format_exc())
+    response = {
+        "error": str(e),
+        "type": type(e).__name__
+    }
+    return jsonify(response), 500
 
 if __name__ == '__main__':
     # Set the Flask port from environment variable or default to 5007

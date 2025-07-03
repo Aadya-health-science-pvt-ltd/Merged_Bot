@@ -7,8 +7,8 @@ import os
 # Backend URL (adjust if needed)
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:5009")
 
-st.set_page_config(page_title="Medical Symptom Bot", page_icon="💬", layout="centered")
-st.title("💬 Medical Symptom Bot (Streamlit)")
+st.set_page_config(page_title="Medical Assistant Bot", page_icon="💬", layout="centered")
+st.title("💬 Medical Assistant Bot (Streamlit)")
 
 # Session state for Q&A wizard
 if 'qa_step' not in st.session_state:
@@ -29,13 +29,14 @@ if 'patient_info' not in st.session_state:
 # Q&A steps
 def qa_wizard():
     steps = [
+        ("phone_number", "Enter your phone number (will be used as your session ID):", ""),
         ("doctor_name", "Enter the doctor's name:", "Dr. Balachandra BV"),
         ("age", "Enter the patient's age (in months or years):", ""),
         ("gender", "Select the patient's gender:", "male"),
         ("consultation_type", "Enter the consultation type:", "Child Allergy and Asthma Consultation"),
         ("specialty", "Enter the medical specialty:", "paediatrics"),
         ("clinic_name", "Enter the clinic name:", "Chirayu clinic"),
-        ("symptom", "What is the main symptom or reason for this visit?", ""),
+        ("symptoms", "What is the main symptom or reason for this visit?", ""),
         ("add_appointment", "Add an appointment?", None),
     ]
     step = st.session_state.qa_step
@@ -69,22 +70,26 @@ def qa_wizard():
         else:
             val = st.text_input(question, default, key=key)
         if st.button("Next"):
+            if key == "phone_number" and not val.strip():
+                st.warning("Phone number is required to proceed.")
+                return
             answers[key] = val
             st.session_state.qa_step += 1
             st.rerun()
     else:
         # Show summary and confirm
         st.subheader("Summary of your details:")
-        thread_id = str(uuid.uuid4())
+        thread_id = answers["phone_number"].strip()
         payload = {
             "thread_id": thread_id,
+            "phone_number": thread_id,
             "doctor_name": answers["doctor_name"],
             "age": answers["age"],
             "gender": answers["gender"],
             "consultation_type": answers["consultation_type"],
             "specialty": answers["specialty"],
             "clinic_name": answers["clinic_name"],
-            "symptom": answers["symptom"],
+            "symptoms": answers["symptoms"],
             "appointment_data": {"appointments": appointments}
         }
         st.json(payload)
@@ -98,13 +103,17 @@ def qa_wizard():
                     st.session_state.messages = []  # Start with empty message list
                     st.success("Conversation started!")
                     # Immediately send the symptom as the first message
+                    initial_message = payload.get("symptoms", "")
+                    if not initial_message:
+                        st.warning("Symptom is required to start the conversation.")
+                        return
                     initial_payload = {
                         "thread_id": thread_id,
                         "age": payload.get("age"),
                         "gender": payload.get("gender"),
                         "vaccine_visit": "yes" if "vaccine" in payload.get("consultation_type", "").lower() else "no",
-                        "symptom": payload.get("symptom"),
-                        "message": payload.get("symptom"),
+                        "symptoms": initial_message,
+                        "message": initial_message,
                         "specialty": payload.get("specialty"),
                         "message_type": "human"
                     }
@@ -226,7 +235,8 @@ if st.session_state.conversation_started:
             "age": patient_info.get("age"),
             "gender": patient_info.get("gender"),
             "vaccine_visit": "yes" if "vaccine" in patient_info.get("consultation_type", "").lower() else "no",
-            "symptom": user_input,
+            "symptoms": user_input,
+            "message": user_input,
             "specialty": patient_info.get("specialty"),
             "message_type": "human"
         }
