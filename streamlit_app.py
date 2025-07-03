@@ -35,6 +35,7 @@ def qa_wizard():
         ("consultation_type", "Enter the consultation type:", "Child Allergy and Asthma Consultation"),
         ("specialty", "Enter the medical specialty:", "paediatrics"),
         ("clinic_name", "Enter the clinic name:", "Chirayu clinic"),
+        ("symptom", "What is the main symptom or reason for this visit?", ""),
         ("add_appointment", "Add an appointment?", None),
     ]
     step = st.session_state.qa_step
@@ -83,6 +84,7 @@ def qa_wizard():
             "consultation_type": answers["consultation_type"],
             "specialty": answers["specialty"],
             "clinic_name": answers["clinic_name"],
+            "symptom": answers["symptom"],
             "appointment_data": {"appointments": appointments}
         }
         st.json(payload)
@@ -95,7 +97,27 @@ def qa_wizard():
                     st.session_state.patient_info = payload
                     st.session_state.messages = []  # Start with empty message list
                     st.success("Conversation started!")
-                    # Immediately send two dummy messages to get initial bot selection
+                    # Immediately send the symptom as the first message
+                    initial_payload = {
+                        "thread_id": thread_id,
+                        "age": payload.get("age"),
+                        "gender": payload.get("gender"),
+                        "vaccine_visit": "yes" if "vaccine" in payload.get("consultation_type", "").lower() else "no",
+                        "symptom": payload.get("symptom"),
+                        "message": payload.get("symptom"),
+                        "specialty": payload.get("specialty"),
+                        "message_type": "human"
+                    }
+                    try:
+                        resp_msg = requests.post(f"{BACKEND_URL}/message", json=initial_payload)
+                        if resp_msg.status_code == 200:
+                            reply = resp_msg.json().get("reply", "")
+                            st.session_state.messages.append({"type": "bot", "content": reply})
+                        else:
+                            st.session_state.messages.append({"type": "bot", "content": f"Error: {resp_msg.json().get('error', resp_msg.text)}"})
+                    except Exception as e:
+                        st.session_state.messages.append({"type": "bot", "content": f"Error: {e}"})
+                    # Immediately send two dummy messages to get initial bot selection (optional, can be removed if not needed)
                     dummy_payload_1 = {
                         "thread_id": thread_id,
                         "message": "dummy",
