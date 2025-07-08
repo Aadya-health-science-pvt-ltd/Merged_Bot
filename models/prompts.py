@@ -89,7 +89,7 @@ Symptom Correlation Guide for Smart Questioning (General Child >6 months):
 - Fever: Cough, Cold, Throat pain, Leaky Nose
 - Throat Pain: Cough, Cold, Fever, Voice change, Ear Pain
 - Nose Block: Cough, Fever, Sneezing, Nose Itching, Ear Pain, Watery Eyes, Breathing Difficulty, Headache
-- Sneezing: Cold, Nose Block, Nose Itching, Leaky Nose, Watery Eyes
+- Sneezing: Cold, Nose Block, Sneezing, Leaky Nose, Watery Eyes
 - Nose Itching: Cold, Nose Block, Sneezing, Leaky Nose, Watery Eyes
 - Leaky Nose: Cough, Fever, Nose Block, Sneezing, Nose Itching, Watery Eyes
 - Vomiting: Loose Stools, Stomach pain, Chest Congestion, Constipation, Pain while passing urine
@@ -1058,3 +1058,34 @@ episode_check_prompt = ChatPromptTemplate.from_template("""Is the user's current
 Previous appointment summary: {previous_summary}
 Current user message: {current_message}
 """)
+
+# Age-appropriate summary prompts for each vaccine visit
+VACCINE_SUMMARY_PROMPTS = {
+    # Infants (6w, 10w, 12w, 6m, 7m, 9m, 12m)
+    "vaccine_6w": '''At the end, summarize under: Gross Motor, Speech, Social, Vision, Hearing, Feeding, Immunization.''',
+    "vaccine_10w": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization.''',
+    "vaccine_12w": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization.''',
+    "vaccine_6m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization.''',
+    "vaccine_7m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization.''',
+    "vaccine_9m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization.''',
+    "vaccine_12m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization.''',
+    # Toddlers/Preschool (15m–60m)
+    "vaccine_15m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
+    "vaccine_18m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
+    "vaccine_20m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
+    "vaccine_24m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
+    "vaccine_36m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
+    "vaccine_42m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
+    "vaccine_48m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
+    "vaccine_54m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
+    "vaccine_60m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
+    "vaccine_66m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
+    "vaccine_72m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
+    # School Age (add Physical Activity, Mental Wellbeing, Diet/Exercise)
+    "vaccine_10y_male": '''At the end, summarize under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization.''',
+    "vaccine_10y_female": '''At the end, summarize under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization.''',
+    "vaccine_11y_male": '''At the end, summarize under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization.''',
+    "vaccine_11y_female": '''At the end, summarize under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization.''',
+    "vaccine_16y_male": '''At the end, summarize under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization.''',
+    "vaccine_16y_female": '''At the end, summarize under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization.''',
+}

@@ -3,7 +3,7 @@ from langchain_core.runnables import RunnablePassthrough
 from config.llm_config import llm
 from models.prompts import (
     get_info_prompt, followup_prompt, episode_check_prompt,
-    SYMPTOM_PROMPTS, SYMPTOM_SUMMARY_PROMPT
+    SYMPTOM_PROMPTS, SYMPTOM_SUMMARY_PROMPT, VACCINE_SUMMARY_PROMPTS
 )
 from config.constants import SAMPLE_PRESCRIPTION
 from langchain_openai import ChatOpenAI
@@ -98,18 +98,37 @@ def make_symptom_chain(age, gender, vaccine_visit, symptom, prompt_override=None
         ("symptoms", lambda x: x.get("symptoms", "")),
         ("messages", lambda x: x.get("messages", [])),
     ]
-    # Determine if this is a vaccine prompt
+    # Determine if this is a vaccine prompt and get the classifier category
     is_vaccine_prompt = False
+    vaccine_key = None
     if prompt_override is not None:
         # Try to detect from the prompt_override string
-        is_vaccine_prompt = 'Vaccine Visit Bot' in prompt_text or re.search(r'vaccine_\d+[mwyy]', str(prompt_text))
+        if 'Vaccine Visit Bot' in prompt_text or re.search(r'vaccine_\d+[mwyy]', str(prompt_text)):
+            is_vaccine_prompt = True
+            # Try to extract the vaccine key from the prompt_override string
+            match = re.search(r'vaccine_\d+[mwyy](?:_(?:male|female))?', str(prompt_text))
+            if match:
+                vaccine_key = match.group(0)
     else:
         # Try to detect from the classifier category
-        if isinstance(prompt_text, str) and re.match(r'.*Vaccine Visit Bot.*', prompt_text):
+        category = classifier_chain.invoke({
+            "age": age,
+            "gender": gender,
+            "vaccine_visit": vaccine_visit,
+            "symptom": symptom
+        }).strip()
+        if category.startswith("vaccine_"):
             is_vaccine_prompt = True
-        elif isinstance(prompt_text, str) and re.match(r'.*vaccine_\d+[mwyy].*', prompt_text):
-            is_vaccine_prompt = True
-    if is_vaccine_prompt:
+            vaccine_key = category
+    if is_vaccine_prompt and vaccine_key in VACCINE_SUMMARY_PROMPTS:
+        summary_prompt = VACCINE_SUMMARY_PROMPTS[vaccine_key]
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", prompt_text),
+            ("system", summary_prompt),
+            ("user", "{messages}")
+        ])
+    elif is_vaccine_prompt:
+        # fallback to generic summary if key not found
         prompt = ChatPromptTemplate.from_messages([
             ("system", prompt_text),
             ("system", SYMPTOM_SUMMARY_PROMPT),
