@@ -42,7 +42,8 @@ You are a medical triage classifier for a pediatric symptom collection bot. Give
 Follow this logic to select the most appropriate prompt category:
 
 1. If vaccine visit is "yes":
-   - Use the nearest lower age bucket (from this list: 6w, 10w, 12w, 6m, 7m, 9m, 12m, 15m, 18m, 20m, 24m, 30m, 36m, 42m, 48m, 54m, 60m, 66m, 72m, 10y, 11y, 16y) and select the corresponding vaccine prompt (e.g., "vaccine_12m" for 14 months).
+   - Use the nearest lower age bucket (from this list: 6w, 10w, 12w, 6m, 7m, 9m, 12m, 15m, 18m, 20m, 24m, 30m, 36m, 42m, 48m, 54m, 60m, 66m, 72m, 10y, 11y, 16y) and select the corresponding vaccine prompt.
+   - If the age bucket is 10y, 11y, or 16y, output "vaccine_<age_bucket>_male" or "vaccine_<age_bucket>_female" based on the gender. For all other buckets, output "vaccine_<age_bucket>".
 2. Else if age is less than 6 months:
    - Use the "less_than_6_months" prompt.
 3. Else if gender is "male" and the symptom matches a male-specific symptom (e.g., testis, foreskin, penis, etc.):
@@ -54,7 +55,8 @@ Follow this logic to select the most appropriate prompt category:
 
 Return only the category name.
 Possible outputs:
-- "vaccine_<age_bucket>" (e.g., "vaccine_12m", "vaccine_10y", etc.)
+- "vaccine_<age_bucket>" (e.g., "vaccine_12m", "vaccine_7m", etc.)
+- "vaccine_10y_male", "vaccine_10y_female", "vaccine_11y_male", "vaccine_11y_female", "vaccine_16y_male", "vaccine_16y_female"
 - "less_than_6_months"
 - "male_child"
 - "female_child"
@@ -74,6 +76,12 @@ def select_symptom_prompt(age, gender, vaccine_visit, symptom):
         "vaccine_visit": vaccine_visit,
         "symptom": symptom
     }).strip()
+    # Post-process for vaccine gendered keys if needed
+    if category in ["vaccine_10y", "vaccine_11y", "vaccine_16y"]:
+        if str(gender).lower() == "male":
+            category = f"{category}_male"
+        elif str(gender).lower() == "female":
+            category = f"{category}_female"
     return SYMPTOM_PROMPTS.get(category, SYMPTOM_PROMPTS["general_child"])
 
 # Dynamic symptom chain
