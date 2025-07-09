@@ -76,6 +76,7 @@ def select_symptom_prompt(age, gender, vaccine_visit, symptom):
         "vaccine_visit": vaccine_visit,
         "symptom": symptom
     }).strip()
+    print(f"[DEBUG] Classified prompt category: {category}")
     # Post-process for vaccine gendered keys if needed
     if category in ["vaccine_10y", "vaccine_11y", "vaccine_16y"]:
         if str(gender).lower() == "male":
