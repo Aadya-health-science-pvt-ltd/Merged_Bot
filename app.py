@@ -29,12 +29,7 @@ def start_conversation():
     Initializes a conversation session, storing references to the compiled bot apps
     and setting up initial conversation state.
     """
-    try:
-        data = request.get_json(force=True)
-    except Exception as e:
-        return jsonify({'error': 'Invalid or missing JSON in request body', 'details': str(e)}), 400
-    if not data:
-        return jsonify({'error': 'Empty JSON in request body'}), 400
+    data = request.get_json() or {}
     thread_id = data.get('thread_id')
     doctor_name = data.get('doctor_name')
     consultation_type = data.get('consultation_type')
@@ -95,12 +90,7 @@ def send_message():
     Sends a user message to the chatbot. This endpoint handles routing to the correct bot
     and managing the conversation history.
     """
-    try:
-        data = request.get_json(force=True)
-    except Exception as e:
-        return jsonify({'error': 'Invalid or missing JSON in request body', 'details': str(e)}), 400
-    if not data:
-        return jsonify({'error': 'Empty JSON in request body'}), 400
+    data = request.get_json() or {}
     print("Received /message payload:", data)  # Debug print
     thread_id = data.get('thread_id')
     user_message = data.get('message')
