@@ -65,7 +65,10 @@ Possible outputs:
 Do not explain your answer. Just return the category name.
 '''
 
-classifier_llm = ChatOpenAI(model="gpt-4o", temperature=0)
+# Replace this:
+# classifier_llm = ChatOpenAI(model="gpt-4o", temperature=0)
+# Use the shared llm object (already set to gpt-4.1-mini)
+classifier_llm = llm
 classifier_prompt = ChatPromptTemplate.from_template(SYMPTOM_CLASSIFIER_PROMPT)
 classifier_chain = classifier_prompt | classifier_llm | StrOutputParser()
 
