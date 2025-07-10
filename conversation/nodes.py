@@ -35,6 +35,24 @@ def symptom_node(state: ChatState):
     gender = state.get("gender", "")
     consultation_type = state.get("consultation_type", "")
     symptom = state.get("symptoms", "")
+    # Check for user stop/summary triggers
+    user_message = str(state["messages"][-1].content).strip().lower() if state["messages"] else ""
+    stop_triggers = ["stop", "no more", "that's all", "no more information", "done", "end", "finish", "nothing else"]
+    if any(trigger in user_message for trigger in stop_triggers) or not user_message:
+        # Generate summary and add 'end' flag True
+        chain = make_symptom_chain(age, gender, consultation_type, symptom, prompt_override=state["symptom_prompt"])
+        summary_content = chain.invoke({
+            "age": age,
+            "gender": gender,
+            "vaccine_visit": consultation_type,
+            "symptom": symptom,
+            "messages": state["messages"]
+        })
+        return {
+            "messages": state["messages"] + [AIMessage(content=summary_content)],
+            "end": True
+        }
+    # Normal Q&A flow, end is False
     chain = make_symptom_chain(age, gender, consultation_type, symptom, prompt_override=state["symptom_prompt"])
     response_content = chain.invoke({
         "age": age,
@@ -43,7 +61,7 @@ def symptom_node(state: ChatState):
         "symptom": symptom,
         "messages": state["messages"]
     })
-    return {"messages": state["messages"] + [AIMessage(content=response_content)]}
+    return {"messages": state["messages"] + [AIMessage(content=response_content)], "end": False}
 
 def followup_node(state: ChatState):
     """Node to handle post-appointment follow-up."""
