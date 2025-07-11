@@ -1,0 +1,40 @@
+Final_Bot/
+├── .DS_Store
+├── .env
+├── .git/
+├── .gitignore
+├── .streamlit/
+├── .venv/
+├── Bot_prompt.pdf
+├── Bot_prompt.txt
+├── Bot_schema.txt
+├── Folder_structure.txt
+├── LICENSE
+├── Paediatrics.xlsx
+├── README.md
+├── SCALING_SOLUTIONS.md
+├── SU.xlsx
+├── app.py
+├── config/
+│   ├── __pycache__/
+│   ├── constants.py
+│   ├── llm_config.py
+│   └── settings.py
+├── conversation/
+│   ├── __pycache__/
+│   ├── chat_state.py
+│   ├── graph_builder.py
+│   ├── nodes.py
+│   └── router.py
+├── lance_main.py
+├── models/
+│   ├── __pycache__/
+│   ├── chains.py
+│   └── prompts.py
+├── prompt_updated.txt
+├── requirements.txt
+├── retrieval/
+│   └── __pycache__/
+├── streamlit_app.py
+└── utils/
+    └── general_utils.py

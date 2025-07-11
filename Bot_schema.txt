@@ -1,0 +1,79 @@
+
+# Bot Architecture Schema
+
+## 1. Overall Structure
+The bot follows a modular architecture with a Flask backend, Streamlit frontend, and Langchain-based bot logic.
+
+## 2. Components
+### 2.1. Frontend (streamlit_app.py)
+- **Purpose:** User interface for interacting with the bot.
+- **Technology:** Streamlit
+- **Key Features:**
+    - Q&A Wizard: Collects user information (e.g., name, age, symptoms)
+    - Chat Interface: Displays conversation history and allows users to send messages.
+    - Doctor Info Embedding: Allows users to provide a doctor's website for the bot to learn from.
+    - State Management: Uses Streamlit's session state to manage conversation data.
+- **Communication:** Sends requests to the Flask backend API endpoints.
+
+### 2.2. Backend (app.py)
+- **Purpose:** API server that handles requests from the frontend, manages conversations, and orchestrates the bot logic.
+- **Technology:** Flask
+- **Key Features:**
+    - API Endpoints:
+        - `/start_conversation`: Starts a new conversation thread.
+        - `/message`: Sends a user message to the bot and receives a response.
+        - `/embed_website`: Embeds website content for information retrieval.
+        - `/health`: Health check endpoint.
+    - Conversation Management: Manages conversation sessions, including session timeouts and memory management.
+    - Bot Routing: Determines which bot (Get Info, Symptom, Follow-up) should handle each message.
+- **Communication:**
+    - Receives requests from the Streamlit frontend.
+    - Interacts with the Langchain chains in the `models` directory.
+
+### 2.3. Bot Logic (models/)
+- **Purpose:** Contains the Langchain chains that define the bot's behavior.
+- **Technology:** Langchain
+- **Key Modules:**
+    - `chains.py`: Defines the Langchain chains:
+        - `get_info_chain`: Retrieves information about the clinic and doctor.
+        - `make_symptom_chain`: Collects symptom information from the user.
+        - `followup_chain`: Handles follow-up questions.
+        - `episode_check_chain`: Checks if the current issue is related to a previous visit.
+    - `prompts.py`: Defines the prompts used by the Langchain chains.
+
+### 2.4. Conversation Management (conversation/)
+- **Purpose:** Manages the conversation flow and determines which bot to use.
+- **Key Modules:**
+    - `router.py`: Contains the `decide_bot_route` function, which determines which bot to use based on the conversation state.
+    - `chat_state.py`: Defines the `ChatState` TypedDict, which represents the state of the conversation.
+    - `graph_builder.py`: likely used to construct the LangGraph graphs for the different bots.
+
+### 2.5. Configuration (config/)
+- **Purpose:** Stores configuration settings for the bot.
+- **Key Files:**
+    - `settings.py`: Loads environment variables (e.g., OpenAI API key).
+    - `llm_config.py`: Configures the language model (LLM) used by the bot.
+    - `constants.py`: Defines various constants used in the application.
+
+### 2.6. Data Storage
+- The bot uses in-memory storage (`conversations` dictionary in `app.py`) to store conversation sessions.
+- For persistent storage of website embeddings, it likely utilizes LanceDB (based on `lance_main.py`).
+
+## 3. Workflow
+1. User interacts with the Streamlit frontend (`streamlit_app.py`).
+2. Frontend sends a request to the Flask backend (`app.py`).
+3. Backend receives the request and retrieves the conversation session.
+4. Backend uses the `decide_bot_route` function (in `conversation/router.py`) to determine which bot to use.
+5. Backend invokes the appropriate Langchain chain (in `models/chains.py`).
+6. Langchain chain interacts with the LLM and generates a response.
+7. Backend sends the response back to the frontend.
+8. Frontend displays the response to the user.
+
+## 4. Key Technologies
+- Python
+- Flask
+- Streamlit
+- Langchain
+- OpenAI API
+- LanceDB (Likely)
+
