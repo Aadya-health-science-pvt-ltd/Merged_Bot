@@ -16,3 +16,5 @@ flask
 requests
 tiktoken
 langchain-faiss
+psutil
+langgraph-checkpoint-redis

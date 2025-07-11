@@ -8,6 +8,9 @@ from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 from langchain_core.runnables import RunnableConfig
 from typing import List, Dict, Optional, Literal # Make sure Literal is here for decide_bot_route return type
 import typing
+import psutil
+import gc
+import logging
 
 import lance_main  # Import everything from lance_main
 from conversation.chat_state import initialize_symptom_session
@@ -20,6 +23,65 @@ executor = ThreadPoolExecutor(max_workers=(os.cpu_count() or 2) * 2)
 
 conversations = {}
 SESSION_TIMEOUT = timedelta(minutes=15) # Session expires after 15 minutes of inactivity
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Track app start time for health checks
+start_time = datetime.now(timezone.utc)
+
+def monitor_memory():
+    """Monitor memory usage and log statistics"""
+    process = psutil.Process()
+    memory_mb = process.memory_info().rss / 1024 / 1024
+    logger.info(f"Memory usage: {memory_mb:.2f} MB, Active conversations: {len(conversations)}")
+    
+    if memory_mb > 1000:  # 1GB threshold
+        logger.warning(f"High memory usage: {memory_mb:.2f} MB")
+        cleanup_expired_sessions()
+        gc.collect()
+    
+    return memory_mb
+
+def cleanup_expired_sessions():
+    """Clean up expired sessions to free memory"""
+    current_time = datetime.now(timezone.utc)
+    expired_count = 0
+    
+    for thread_id in list(conversations.keys()):
+        conv = conversations[thread_id]
+        if current_time - conv['last_activity'] > SESSION_TIMEOUT:
+            conversations.pop(thread_id, None)
+            expired_count += 1
+    
+    if expired_count > 0:
+        logger.info(f"Cleaned up {expired_count} expired sessions")
+
+def handle_memory_pressure():
+    """Handle high memory usage by clearing oldest sessions"""
+    if len(conversations) > 1000:
+        logger.warning("High conversation count, clearing oldest sessions")
+        sorted_conversations = sorted(
+            conversations.items(), 
+            key=lambda x: x[1]['last_activity']
+        )
+        # Remove oldest 20%
+        for thread_id, _ in sorted_conversations[:200]:
+            conversations.pop(thread_id, None)
+        logger.info("Cleared 200 oldest sessions")
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint for monitoring"""
+    memory_mb = monitor_memory()
+    return jsonify({
+        'status': 'healthy',
+        'active_conversations': len(conversations),
+        'memory_usage_mb': round(memory_mb, 2),
+        'uptime': str(datetime.now(timezone.utc) - start_time),
+        'session_timeout_minutes': SESSION_TIMEOUT.total_seconds() / 60
+    })
 
 
 @app.route('/start_conversation', methods=['POST'])
@@ -90,6 +152,9 @@ def send_message():
     Sends a user message to the chatbot. This endpoint handles routing to the correct bot
     and managing the conversation history.
     """
+    # Monitor memory usage
+    monitor_memory()
+    
     data = request.get_json() or {}
     print("Received /message payload:", data)  # Debug print
     thread_id = data.get('thread_id')
@@ -109,6 +174,9 @@ def send_message():
         return jsonify({'error': 'Session expired after 15 minutes of inactivity.'}), 440
 
     conv['last_activity'] = datetime.now(timezone.utc) # Update last activity timestamp
+
+    # Handle memory pressure
+    handle_memory_pressure()
 
     # Update all dynamic fields from payload BEFORE constructing ChatState
     if data.get('appointment_data'):
