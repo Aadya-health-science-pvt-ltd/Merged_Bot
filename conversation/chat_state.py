@@ -22,6 +22,7 @@ class ChatState(TypedDict):
     vaccine_visit: Optional[str]     # Add this for vaccine visit flag
     symptoms: Optional[str]          # Renamed from 'symptom' to avoid node conflict
     specialty: Optional[str]         # Add this
+    doctor_info_url: Optional[str]   # Add this for doctor's website URL
     # --- Symptom Collector Memory/State ---
     symptom_collection_phase: Optional[str]  # "awaiting_symptom", "asking_questions", "awaiting_more_symptoms", "summary"
     collected_symptoms: Optional[List[Dict]] # List of {"symptom": str, "questions": List[str], "answers": List[str]}

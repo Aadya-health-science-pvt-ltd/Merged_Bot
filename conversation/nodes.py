@@ -10,13 +10,23 @@ def get_info_node(state: ChatState):
     """Node to handle general information requests."""
     print("--- Executing Get Info Node ---")
     query = str(state["messages"][-1].content)
-    # Always retrieve context, regardless of doctor_info_url
-    context_chunks = retrieve_relevant_chunks(None, query, k=4)
-    print(f"Retrieved {len(context_chunks)} context chunks")
-    for i, chunk in enumerate(context_chunks):
-        print(f"Chunk {i}: {chunk[:200]}...")
-    context = "\n\n".join(context_chunks)
-    print(f"Final context passed to LLM: {context[:500]}...")
+    
+    # Get doctor_info_url from state if available
+    doctor_info_url = state.get("doctor_info_url")
+    print(f"[DEBUG] doctor_info_url from state: {doctor_info_url}")
+    
+    # Only retrieve context if we have a valid URL
+    if doctor_info_url:
+        context_chunks = retrieve_relevant_chunks(doctor_info_url, query, k=4)
+        print(f"Retrieved {len(context_chunks)} context chunks")
+        for i, chunk in enumerate(context_chunks):
+            print(f"Chunk {i}: {chunk[:200]}...")
+        context = "\n\n".join(context_chunks)
+        print(f"Final context passed to LLM: {context[:500]}...")
+    else:
+        print("[DEBUG] No doctor_info_url provided, using empty context")
+        context = ""
+    
     response_content = get_info_chain.invoke({
         "messages": state["messages"],
         "context": context,
