@@ -185,6 +185,9 @@ def send_message():
     })
 
     # --- Routing Logic: Prioritized If-Else Structure ---
+    print(f"[DEBUG] Routing logic - ask_same_episode: {conv['configurable']['ask_same_episode']}")
+    print(f"[DEBUG] Routing logic - is_initial_message: {conv['configurable']['is_initial_message']}")
+    print(f"[DEBUG] Routing logic - current_bot_key: {conv['configurable']['current_bot_key']}")
 
     # Priority 1: Handling "Same Episode" follow-up question (Rule 3's second step)
     if conv['configurable']['ask_same_episode']:
@@ -215,10 +218,12 @@ def send_message():
 
     # Priority 2: Initial routing (first message in a new conversation thread)
     elif conv['configurable']['is_initial_message']:
+        print("[DEBUG] Initial routing - calling decide_bot_route")
         conv['configurable']['is_initial_message'] = False # Mark as not initial anymore
 
         # Use the external router function from lance_main to decide the initial bot
         route_decision = lance_main.decide_bot_route(current_chat_state, runnable_config_obj)
+        print(f"[DEBUG] Router decision: {route_decision}")
         
         if route_decision == "get_info":
             selected_app = conv['get_info_app']

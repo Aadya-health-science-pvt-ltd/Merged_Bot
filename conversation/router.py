@@ -54,16 +54,6 @@ def decide_bot_route(state: ChatState, config: RunnableConfig) -> Literal["get_i
     if past_appointments and not future_appointments:
         print("Bot Router -> followup (Rule 4)")
         return "followup"
-    
-    # Rule 5: If symptoms are provided but no appointments, route to symptom bot
-    symptoms = state.get("symptoms", "")
-    print(f"[DEBUG] symptoms: '{symptoms}'")
-    print(f"[DEBUG] symptoms.strip(): '{symptoms.strip() if symptoms else ''}'")
-    print(f"[DEBUG] symptoms and symptoms.strip(): {bool(symptoms and symptoms.strip())}")
-    
-    if symptoms and symptoms.strip():
-        print("Bot Router -> symptom (Rule 5: symptoms provided)")
-        return "symptom"
 
     print("Bot Router -> get_info (Default)")
     return "get_info"

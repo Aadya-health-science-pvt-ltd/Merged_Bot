@@ -89,7 +89,7 @@ def qa_wizard():
             "consultation_type": answers["consultation_type"],
             "specialty": answers["specialty"],
             "clinic_name": answers["clinic_name"],
-            "symptoms": answers["symptoms"],
+            "symptoms": answers["symptoms"] if answers["symptoms"] and answers["symptoms"].strip() and answers["symptoms"].lower() != "none" else "",
             "appointment_data": {"appointments": appointments}
         }
         st.json(payload)
