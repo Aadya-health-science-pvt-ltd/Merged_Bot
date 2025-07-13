@@ -156,6 +156,7 @@ def send_message():
         "vaccine_visit": conv['configurable'].get('vaccine_visit'),
         "symptoms": conv['configurable'].get('symptoms'),
         "specialty": conv['configurable'].get('specialty'),
+        "consultation_type": conv['configurable'].get('consultation_type'),
         "doctor_info_url": conv['configurable'].get('doctor_info_url'),
         "symptom_collection_phase": conv['configurable'].get('symptom_collection_phase'),
         "collected_symptoms": conv['configurable'].get('collected_symptoms'),
