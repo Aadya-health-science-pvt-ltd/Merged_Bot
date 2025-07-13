@@ -10,6 +10,9 @@ def decide_bot_route(state: ChatState, config: RunnableConfig) -> Literal["get_i
 
     doctor_name = config.get('configurable', {}).get('doctor_name')
     appointment_data = state.get('appointment_data', {})
+    
+    print(f"[DEBUG] doctor_name: {doctor_name}")
+    print(f"[DEBUG] appointment_data: {appointment_data}")
 
     current_time = datetime.now(timezone.utc)
 
@@ -17,6 +20,8 @@ def decide_bot_route(state: ChatState, config: RunnableConfig) -> Literal["get_i
         appt for appt in appointment_data.get("appointments", [])
         if appt.get("doctor_name") == doctor_name
     ]
+    
+    print(f"[DEBUG] doctor_appointments: {doctor_appointments}")
 
     future_appointments = [
         appt for appt in doctor_appointments
@@ -27,8 +32,12 @@ def decide_bot_route(state: ChatState, config: RunnableConfig) -> Literal["get_i
         appt for appt in doctor_appointments
         if appt.get("appt_status") == "completed"
     ]
+    
+    print(f"[DEBUG] future_appointments: {future_appointments}")
+    print(f"[DEBUG] past_appointments: {past_appointments}")
 
     first_message = state["messages"][0].content if state["messages"] else ""
+    print(f"[DEBUG] first_message: '{first_message}'")
 
     if first_message.startswith(f"Hello {doctor_name}") and not past_appointments:
         print("Bot Router -> get_info (Rule 1)")
@@ -45,6 +54,12 @@ def decide_bot_route(state: ChatState, config: RunnableConfig) -> Literal["get_i
     if past_appointments and not future_appointments:
         print("Bot Router -> followup (Rule 4)")
         return "followup"
+    
+    # Rule 5: If symptoms are provided but no appointments, route to symptom bot
+    symptoms = state.get("symptoms", "")
+    if symptoms and symptoms.strip():
+        print("Bot Router -> symptom (Rule 5: symptoms provided)")
+        return "symptom"
 
     print("Bot Router -> get_info (Default)")
     return "get_info"
