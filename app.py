@@ -167,7 +167,7 @@ def send_message():
 
     # Ensure symptom session is initialized before invoking the symptom bot
     if (
-        (conv['configurable'].get('current_bot_key') == 'symptom' or selected_app == conv.get('symptom_app'))
+        (conv['configurable'].get('current_bot_key') == 'symptom')
         and (not current_chat_state.get('symptom_prompt'))
     ):
         current_chat_state = initialize_symptom_session(current_chat_state)
@@ -259,6 +259,13 @@ def send_message():
             bot_selection_message = "Continuing with default bot (get_info)."
 
         bot_selection_message = f"Continuing with previously selected bot: {bot_key}."
+
+    # Ensure symptom session is initialized if symptom bot is selected
+    if selected_app == conv['symptom_app'] and not current_chat_state.get('symptom_prompt'):
+        print("[DEBUG] Initializing symptom session for symptom bot")
+        current_chat_state = initialize_symptom_session(current_chat_state)
+        conv['configurable']['symptom_prompt'] = current_chat_state.get('symptom_prompt')
+        print("[DEBUG] After initialize_symptom_session, symptom_prompt:", current_chat_state.get('symptom_prompt'))
 
     # --- Invoke the Selected Bot's LangGraph Application ---
     if selected_app:
