@@ -235,11 +235,18 @@ if st.session_state.conversation_started:
             "age": patient_info.get("age"),
             "gender": patient_info.get("gender"),
             "vaccine_visit": "yes" if "vaccine" in patient_info.get("consultation_type", "").lower() else "no",
-            "symptoms": user_input,
             "message": user_input,
             "specialty": patient_info.get("specialty"),
             "message_type": "human"
         }
+        
+        # Only set symptoms if the user is actually providing symptoms
+        # This should be determined by the current bot context or user intent
+        # For now, we'll only set symptoms if the last bot selection was symptom-related
+        if (st.session_state.last_bot_selection and 
+            ('symptom' in st.session_state.last_bot_selection.lower() or
+             'followup' in st.session_state.last_bot_selection.lower())):
+            payload["symptoms"] = user_input
         # Always include doctor_info_url for info queries after embedding
         if show_doctor_info_url and st.session_state.doctor_info_url.strip():
             payload["doctor_info_url"] = st.session_state.doctor_info_url.strip()
