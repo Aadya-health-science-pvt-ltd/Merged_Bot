@@ -22,6 +22,8 @@ class ChatState(TypedDict):
     vaccine_visit: Optional[str]     # Add this for vaccine visit flag
     symptoms: Optional[str]          # Renamed from 'symptom' to avoid node conflict
     specialty: Optional[str]         # Add this
+    consultation_type: Optional[str]  # Add this for consultation type
+    doctor_info_url: Optional[str]   # Add this for doctor's website URL
     # --- Symptom Collector Memory/State ---
     symptom_collection_phase: Optional[str]  # "awaiting_symptom", "asking_questions", "awaiting_more_symptoms", "summary"
     collected_symptoms: Optional[List[Dict]] # List of {"symptom": str, "questions": List[str], "answers": List[str]}
@@ -57,10 +59,27 @@ def initialize_symptom_session(state: ChatState):
         gender = "unknown"
         state["gender"] = "unknown"
 
+    # Improved vaccine visit detection
+    # Check if consultation_type contains vaccine-related keywords
+    consultation_type = state.get("consultation_type", "")
+    if not vaccine_visit and consultation_type:
+        vaccine_keywords = ["vaccine", "vaccination", "immunization", "shot"]
+        if any(keyword in consultation_type.lower() for keyword in vaccine_keywords):
+            vaccine_visit = "yes"
+            state["vaccine_visit"] = "yes"
+    
+    # Also check if the symptom message contains vaccine-related keywords
+    if not vaccine_visit and symptom:
+        vaccine_keywords = ["vaccine", "vaccination", "immunization", "shot"]
+        if any(keyword in symptom.lower() for keyword in vaccine_keywords):
+            vaccine_visit = "yes"
+            state["vaccine_visit"] = "yes"
+
     classifier_input = {
         "age": age,
         "gender": gender,
         "vaccine_visit": vaccine_visit,
+        "consultation_type": consultation_type,
         "symptom": symptom
     }
     print("[DEBUG] Classifier input:", classifier_input)

@@ -115,7 +115,7 @@ In addition to general questions, ask about:
 - Discharge from penis: Duration, Colour (white/yellow/blood), Itching (yes/no).
 - Short penis: Presence.
 - Swelling in the breast area: Onset, Duration, Progression, Severity, Location on the body.
-At the end, generate a technical summary for the doctor.
+IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points. Focus on symptoms, relevant history, and objective observations. Use bullet points (•) and write in medical/technical language.
 '''
 SYMPTOM_PROMPTS["female_child"] = SOFT_SYSTEM_RULES + STRICT_SYSTEM_RULES + '''
 Role: Pediatric Symptom Assessment Bot (Female Child).
@@ -125,7 +125,7 @@ In addition to general questions, ask about:
 - Excessive stomach pain during periods: Onset, Duration, Progression, Severity, Frequency, Quantity, What makes it worse (spicy food, outside food, stress, coffee, tea), What helps (clear liquids), Past similar episodes, Activity restriction, Itching.
 - Irregular menstrual periods: Onset, Duration, Progression, Severity, Frequency, Quantity, What makes it worse (stress), What helps (medications), Past similar episodes, Activity restriction, Itching.
 - Pain in the breast area: Onset, Duration, Progression, Severity, What makes it worse (pressure, tight clothes), What helps (medications).
-At the end, generate a technical summary for the doctor.
+IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points. Focus on symptoms, relevant history, and objective observations. Use bullet points (•) and write in medical/technical language.
 '''
 SYMPTOM_PROMPTS["less_than_6_months"] = SOFT_SYSTEM_RULES + STRICT_SYSTEM_RULES + '''
 IMPORTANT: If the user mentions multiple symptoms together, ask the user to clarify which symptom started first, which came next, and so on. Then, for each symptom, collect all relevant details (onset, duration, severity, progression, triggers, etc.) one by one, treating each symptom as a separate entity. After finishing one symptom, ask about other likely symptoms (from symptom clustering, in order of score). If the user confirms another symptom, collect full details for that symptom as well. If the user confirms any associated symptom (e.g., cold, sneezing, trauma, etc.) when asked about them, treat each confirmed associated symptom as a new symptom. For each, collect all relevant details (onset, duration, severity, progression, triggers, etc.) one by one, just as you would for the main symptom. For each main symptom, you must proactively ask about each correlated symptom listed in the Symptom Correlation Guide for Smart Questioning. If the user confirms any correlated symptom, treat each as a new symptom and collect all relevant details for each, one by one, before summarizing. Only summarize after all confirmed symptoms have been fully explored.
@@ -199,7 +199,7 @@ Symptom Correlation Guide for Smart Questioning (Infants <6 months):
 '''
 SYMPTOM_PROMPTS["vaccine_6w"] = SOFT_SYSTEM_RULES + STRICT_SYSTEM_RULES + '''
 Role: Pediatric Vaccine Visit Bot for Age 6 weeks.
-Ask the following, one at a time, and at the end, generate a technical summary for the doctor using the same headings:
+Ask the following, one at a time, and at the end, generate a structured technical summary FOR THE DOCTOR using bullet points under the same headings. Use bullet points (•) and write in medical/technical language:
 
 Gross Motor:
 - Does the baby lift and briefly hold their head up (~45°) when placed on their belly (tummy time)?
@@ -228,7 +228,7 @@ Decreased Urine Output:
 '''
 SYMPTOM_PROMPTS["vaccine_10w"] = SOFT_SYSTEM_RULES + STRICT_SYSTEM_RULES + '''
 Role: Pediatric Vaccine Visit Bot for Age 10 weeks.
-Ask the following, one at a time, and at the end, generate a technical summary for the doctor using the same headings:
+Ask the following, one at a time, and at the end, generate a structured technical summary FOR THE DOCTOR using bullet points under the same headings. Use bullet points (•) and write in medical/technical language:
 
 Gross Motor:
 - When you put your baby on their tummy, do they lift their head and upper body up by themselves (Tummy lift)?
@@ -262,7 +262,7 @@ Decreased Urine Output:
 '''
 SYMPTOM_PROMPTS["vaccine_12w"] = SOFT_SYSTEM_RULES + STRICT_SYSTEM_RULES + '''
 Role: Pediatric Vaccine Visit Bot for Age 12 weeks.
-Ask the following, one at a time, and at the end, generate a technical summary for the doctor using the same headings:
+Ask the following, one at a time, and at the end, generate a structured technical summary FOR THE DOCTOR using bullet points under the same headings. Use bullet points (•) and write in medical/technical language:
 
 Gross Motor:
 - When you hold your baby upright under the arms, can they keep their head straight (not flop forward)?
@@ -296,7 +296,7 @@ Decreased Urine Output:
 '''
 SYMPTOM_PROMPTS["vaccine_6m"] = SOFT_SYSTEM_RULES + STRICT_SYSTEM_RULES + '''
 Role: Pediatric Vaccine Visit Bot for Age 6 months.
-Ask the following, one at a time, and at the end, generate a technical summary for the doctor using the same headings:
+Ask the following, one at a time, and at the end, generate a structured technical summary FOR THE DOCTOR using bullet points under the same headings. Use bullet points (•) and write in medical/technical language:
 
 Gross Motor:
 - Does your baby roll from tummy to back or back to tummy on their own (Rolls Over)?
@@ -1013,7 +1013,7 @@ Immunization:
 # Vaccine visit prompts by age bucket and all other keys from prompt_updated.txt should be included above.
 
 SYMPTOM_SUMMARY_PROMPT = SOFT_SYSTEM_RULES + STRICT_SYSTEM_RULES + '''
-At the end of the Q&A, generate a structured technical summary for the doctor using the following headings:
+IMPORTANT: At the end of the Q&A, generate a structured technical summary FOR THE DOCTOR (not the patient) using bullet points under the following headings:
 - Gross Motor
 - Fine Motor
 - Speech
@@ -1026,7 +1026,14 @@ At the end of the Q&A, generate a structured technical summary for the doctor us
 - Physical Activity
 - Mental Wellbeing
 - Pubertal Development
-Summarize the patient's responses under each heading. If a heading is not relevant, omit it.
+
+Format the summary as follows:
+• Use bullet points (•) for each detail
+• Write in medical/technical language for the doctor
+• Include only relevant information under each heading
+• If a heading is not relevant, omit it entirely
+• Focus on objective facts and observations, not patient opinions
+• Use concise, professional medical terminology
 '''
 
 FOLLOWUP_SYSTEM_PROMPT = SOFT_SYSTEM_RULES + STRICT_SYSTEM_RULES + """You are a post-appointment follow-up assistant for {clinic_name}.
@@ -1062,30 +1069,30 @@ Current user message: {current_message}
 # Age-appropriate summary prompts for each vaccine visit
 VACCINE_SUMMARY_PROMPTS = {
     # Infants (6w, 10w, 12w, 6m, 7m, 9m, 12m)
-    "vaccine_6w": '''At the end, summarize under: Gross Motor, Speech, Social, Vision, Hearing, Feeding, Immunization.''',
-    "vaccine_10w": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization.''',
-    "vaccine_12w": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization.''',
-    "vaccine_6m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization.''',
-    "vaccine_7m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization.''',
-    "vaccine_9m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization.''',
-    "vaccine_12m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization.''',
+    "vaccine_6w": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Speech, Social, Vision, Hearing, Feeding, Immunization. Use bullet points (•) and write in medical/technical language.''',
+    "vaccine_10w": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization. Use bullet points (•) and write in medical/technical language.''',
+    "vaccine_12w": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization. Use bullet points (•) and write in medical/technical language.''',
+    "vaccine_6m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization. Use bullet points (•) and write in medical/technical language.''',
+    "vaccine_7m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization. Use bullet points (•) and write in medical/technical language.''',
+    "vaccine_9m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization. Use bullet points (•) and write in medical/technical language.''',
+    "vaccine_12m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization. Use bullet points (•) and write in medical/technical language.''',
     # Toddlers/Preschool (15m–60m)
-    "vaccine_15m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
-    "vaccine_18m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
-    "vaccine_20m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
-    "vaccine_24m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
-    "vaccine_36m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
-    "vaccine_42m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
-    "vaccine_48m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
-    "vaccine_54m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
-    "vaccine_60m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
-    "vaccine_66m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
-    "vaccine_72m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
+    "vaccine_15m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization. Use bullet points (•) and write in medical/technical language.''',
+    "vaccine_18m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization. Use bullet points (•) and write in medical/technical language.''',
+    "vaccine_20m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization. Use bullet points (•) and write in medical/technical language.''',
+    "vaccine_24m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization. Use bullet points (•) and write in medical/technical language.''',
+    "vaccine_36m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization. Use bullet points (•) and write in medical/technical language.''',
+    "vaccine_42m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization. Use bullet points (•) and write in medical/technical language.''',
+    "vaccine_48m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization. Use bullet points (•) and write in medical/technical language.''',
+    "vaccine_54m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization. Use bullet points (•) and write in medical/technical language.''',
+    "vaccine_60m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization. Use bullet points (•) and write in medical/technical language.''',
+    "vaccine_66m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization. Use bullet points (•) and write in medical/technical language.''',
+    "vaccine_72m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization. Use bullet points (•) and write in medical/technical language.''',
     # School Age (add Physical Activity, Mental Wellbeing, Diet/Exercise)
-    "vaccine_10y_male": '''At the end, summarize under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization.''',
-    "vaccine_10y_female": '''At the end, summarize under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization.''',
-    "vaccine_11y_male": '''At the end, summarize under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization.''',
-    "vaccine_11y_female": '''At the end, summarize under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization.''',
-    "vaccine_16y_male": '''At the end, summarize under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization.''',
-    "vaccine_16y_female": '''At the end, summarize under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization.''',
+    "vaccine_10y_male": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization. Use bullet points (•) and write in medical/technical language.''',
+    "vaccine_10y_female": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization. Use bullet points (•) and write in medical/technical language.''',
+    "vaccine_11y_male": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization. Use bullet points (•) and write in medical/technical language.''',
+    "vaccine_11y_female": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization. Use bullet points (•) and write in medical/technical language.''',
+    "vaccine_16y_male": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization. Use bullet points (•) and write in medical/technical language.''',
+    "vaccine_16y_female": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization. Use bullet points (•) and write in medical/technical language.''',
 }

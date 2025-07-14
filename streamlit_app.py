@@ -89,7 +89,7 @@ def qa_wizard():
             "consultation_type": answers["consultation_type"],
             "specialty": answers["specialty"],
             "clinic_name": answers["clinic_name"],
-            "symptoms": answers["symptoms"],
+            "symptoms": answers["symptoms"] if answers["symptoms"] and answers["symptoms"].strip() and answers["symptoms"].lower() != "none" else "",
             "appointment_data": {"appointments": appointments}
         }
         st.json(payload)
@@ -102,21 +102,38 @@ def qa_wizard():
                     st.session_state.patient_info = payload
                     st.session_state.messages = []  # Start with empty message list
                     st.success("Conversation started!")
-                    # Immediately send the symptom as the first message
-                    initial_message = payload.get("symptoms", "")
-                    if not initial_message:
-                        st.warning("Symptom is required to start the conversation.")
-                        return
-                    initial_payload = {
-                        "thread_id": thread_id,
-                        "age": payload.get("age"),
-                        "gender": payload.get("gender"),
-                        "vaccine_visit": "yes" if "vaccine" in payload.get("consultation_type", "").lower() else "no",
-                        "symptoms": initial_message,
-                        "message": initial_message,
-                        "specialty": payload.get("specialty"),
-                        "message_type": "human"
-                    }
+                    # Check if there are appointments to determine if symptoms are required
+                    has_appointments = payload.get("appointment_data", {}).get("appointments", [])
+                    
+                    # If no appointments, allow starting without symptoms (will route to get_info)
+                    if not has_appointments:
+                        # Start with a general greeting to trigger get_info bot
+                        initial_message = "Hello"
+                        initial_payload = {
+                            "thread_id": thread_id,
+                            "age": payload.get("age"),
+                            "gender": payload.get("gender"),
+                            "vaccine_visit": "yes" if "vaccine" in payload.get("consultation_type", "").lower() else "no",
+                            "message": initial_message,
+                            "specialty": payload.get("specialty"),
+                            "message_type": "human"
+                        }
+                    else:
+                        # If there are appointments, require symptoms
+                        initial_message = payload.get("symptoms", "")
+                        if not initial_message:
+                            st.warning("Symptom is required to start the conversation.")
+                            return
+                        initial_payload = {
+                            "thread_id": thread_id,
+                            "age": payload.get("age"),
+                            "gender": payload.get("gender"),
+                            "vaccine_visit": "yes" if "vaccine" in payload.get("consultation_type", "").lower() else "no",
+                            "symptoms": initial_message,
+                            "message": initial_message,
+                            "specialty": payload.get("specialty"),
+                            "message_type": "human"
+                        }
                     try:
                         resp_msg = requests.post(f"{BACKEND_URL}/message", json=initial_payload)
                         if resp_msg.status_code == 200:
@@ -235,11 +252,31 @@ if st.session_state.conversation_started:
             "age": patient_info.get("age"),
             "gender": patient_info.get("gender"),
             "vaccine_visit": "yes" if "vaccine" in patient_info.get("consultation_type", "").lower() else "no",
-            "symptoms": user_input,
             "message": user_input,
             "specialty": patient_info.get("specialty"),
             "message_type": "human"
         }
+        
+        # Only set symptoms if the user is actually providing symptoms
+        # This should be determined by the current bot context or user intent
+        # For now, we'll only set symptoms if the last bot selection was symptom-related
+        # OR if this is the first message and user is clearly describing symptoms
+        should_set_symptoms = False
+        
+        # Check if we're in a symptom context
+        if (st.session_state.last_bot_selection and 
+            ('symptom' in st.session_state.last_bot_selection.lower() or
+             'followup' in st.session_state.last_bot_selection.lower())):
+            should_set_symptoms = True
+        
+        # Check if this is the first message and user is clearly describing symptoms
+        elif (not st.session_state.last_bot_selection and 
+              any(symptom_word in user_input.lower() for symptom_word in 
+                   ['fever', 'cough', 'cold', 'pain', 'vomit', 'diarrhea', 'rash', 'headache', 'stomach', 'ear', 'throat'])):
+            should_set_symptoms = True
+        
+        if should_set_symptoms:
+            payload["symptoms"] = user_input
         # Always include doctor_info_url for info queries after embedding
         if show_doctor_info_url and st.session_state.doctor_info_url.strip():
             payload["doctor_info_url"] = st.session_state.doctor_info_url.strip()

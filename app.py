@@ -8,9 +8,6 @@ from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 from langchain_core.runnables import RunnableConfig
 from typing import List, Dict, Optional, Literal # Make sure Literal is here for decide_bot_route return type
 import typing
-import psutil
-import gc
-import logging
 
 import lance_main  # Import everything from lance_main
 from conversation.chat_state import initialize_symptom_session
@@ -23,65 +20,6 @@ executor = ThreadPoolExecutor(max_workers=(os.cpu_count() or 2) * 2)
 
 conversations = {}
 SESSION_TIMEOUT = timedelta(minutes=15) # Session expires after 15 minutes of inactivity
-
-# Setup logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Track app start time for health checks
-start_time = datetime.now(timezone.utc)
-
-def monitor_memory():
-    """Monitor memory usage and log statistics"""
-    process = psutil.Process()
-    memory_mb = process.memory_info().rss / 1024 / 1024
-    logger.info(f"Memory usage: {memory_mb:.2f} MB, Active conversations: {len(conversations)}")
-    
-    if memory_mb > 1000:  # 1GB threshold
-        logger.warning(f"High memory usage: {memory_mb:.2f} MB")
-        cleanup_expired_sessions()
-        gc.collect()
-    
-    return memory_mb
-
-def cleanup_expired_sessions():
-    """Clean up expired sessions to free memory"""
-    current_time = datetime.now(timezone.utc)
-    expired_count = 0
-    
-    for thread_id in list(conversations.keys()):
-        conv = conversations[thread_id]
-        if current_time - conv['last_activity'] > SESSION_TIMEOUT:
-            conversations.pop(thread_id, None)
-            expired_count += 1
-    
-    if expired_count > 0:
-        logger.info(f"Cleaned up {expired_count} expired sessions")
-
-def handle_memory_pressure():
-    """Handle high memory usage by clearing oldest sessions"""
-    if len(conversations) > 1000:
-        logger.warning("High conversation count, clearing oldest sessions")
-        sorted_conversations = sorted(
-            conversations.items(), 
-            key=lambda x: x[1]['last_activity']
-        )
-        # Remove oldest 20%
-        for thread_id, _ in sorted_conversations[:200]:
-            conversations.pop(thread_id, None)
-        logger.info("Cleared 200 oldest sessions")
-
-@app.route('/health', methods=['GET'])
-def health_check():
-    """Health check endpoint for monitoring"""
-    memory_mb = monitor_memory()
-    return jsonify({
-        'status': 'healthy',
-        'active_conversations': len(conversations),
-        'memory_usage_mb': round(memory_mb, 2),
-        'uptime': str(datetime.now(timezone.utc) - start_time),
-        'session_timeout_minutes': SESSION_TIMEOUT.total_seconds() / 60
-    })
 
 
 @app.route('/start_conversation', methods=['POST'])
@@ -152,9 +90,6 @@ def send_message():
     Sends a user message to the chatbot. This endpoint handles routing to the correct bot
     and managing the conversation history.
     """
-    # Monitor memory usage
-    monitor_memory()
-    
     data = request.get_json() or {}
     print("Received /message payload:", data)  # Debug print
     thread_id = data.get('thread_id')
@@ -174,9 +109,6 @@ def send_message():
         return jsonify({'error': 'Session expired after 15 minutes of inactivity.'}), 440
 
     conv['last_activity'] = datetime.now(timezone.utc) # Update last activity timestamp
-
-    # Handle memory pressure
-    handle_memory_pressure()
 
     # Update all dynamic fields from payload BEFORE constructing ChatState
     if data.get('appointment_data'):
@@ -224,6 +156,8 @@ def send_message():
         "vaccine_visit": conv['configurable'].get('vaccine_visit'),
         "symptoms": conv['configurable'].get('symptoms'),
         "specialty": conv['configurable'].get('specialty'),
+        "consultation_type": conv['configurable'].get('consultation_type'),
+        "doctor_info_url": conv['configurable'].get('doctor_info_url'),
         "symptom_collection_phase": conv['configurable'].get('symptom_collection_phase'),
         "collected_symptoms": conv['configurable'].get('collected_symptoms'),
         "current_symptom_index": conv['configurable'].get('current_symptom_index'),
@@ -234,7 +168,7 @@ def send_message():
 
     # Ensure symptom session is initialized before invoking the symptom bot
     if (
-        (conv['configurable'].get('current_bot_key') == 'symptom' or selected_app == conv.get('symptom_app'))
+        (conv['configurable'].get('current_bot_key') == 'symptom')
         and (not current_chat_state.get('symptom_prompt'))
     ):
         current_chat_state = initialize_symptom_session(current_chat_state)
@@ -252,6 +186,9 @@ def send_message():
     })
 
     # --- Routing Logic: Prioritized If-Else Structure ---
+    print(f"[DEBUG] Routing logic - ask_same_episode: {conv['configurable']['ask_same_episode']}")
+    print(f"[DEBUG] Routing logic - is_initial_message: {conv['configurable']['is_initial_message']}")
+    print(f"[DEBUG] Routing logic - current_bot_key: {conv['configurable']['current_bot_key']}")
 
     # Priority 1: Handling "Same Episode" follow-up question (Rule 3's second step)
     if conv['configurable']['ask_same_episode']:
@@ -282,10 +219,12 @@ def send_message():
 
     # Priority 2: Initial routing (first message in a new conversation thread)
     elif conv['configurable']['is_initial_message']:
+        print("[DEBUG] Initial routing - calling decide_bot_route")
         conv['configurable']['is_initial_message'] = False # Mark as not initial anymore
 
         # Use the external router function from lance_main to decide the initial bot
         route_decision = lance_main.decide_bot_route(current_chat_state, runnable_config_obj)
+        print(f"[DEBUG] Router decision: {route_decision}")
         
         if route_decision == "get_info":
             selected_app = conv['get_info_app']
@@ -326,6 +265,13 @@ def send_message():
             bot_selection_message = "Continuing with default bot (get_info)."
 
         bot_selection_message = f"Continuing with previously selected bot: {bot_key}."
+
+    # Ensure symptom session is initialized if symptom bot is selected
+    if selected_app == conv['symptom_app'] and not current_chat_state.get('symptom_prompt'):
+        print("[DEBUG] Initializing symptom session for symptom bot")
+        current_chat_state = initialize_symptom_session(current_chat_state)
+        conv['configurable']['symptom_prompt'] = current_chat_state.get('symptom_prompt')
+        print("[DEBUG] After initialize_symptom_session, symptom_prompt:", current_chat_state.get('symptom_prompt'))
 
     # --- Invoke the Selected Bot's LangGraph Application ---
     if selected_app:

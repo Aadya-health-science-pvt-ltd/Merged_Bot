@@ -72,6 +72,12 @@ def get_faiss_db_path(url=None):
 def build_or_load_faiss(url, force_rebuild=False):
     db_path = get_faiss_db_path()
     print(f"[DEBUG] build_or_load_faiss: db_path={db_path}, force_rebuild={force_rebuild}")
+    
+    # If no URL is provided, return None to indicate no context available
+    if not url:
+        print("[DEBUG] No URL provided, returning None")
+        return None
+        
     if not force_rebuild and os.path.exists(db_path):
         print(f"Loading FAISS DB from {db_path}")
         return FAISS.load_local(db_path, OpenAIEmbeddings(), allow_dangerous_deserialization=True)
@@ -88,7 +94,10 @@ def build_or_load_faiss(url, force_rebuild=False):
 
 def retrieve_relevant_chunks(url, query, k=4):
     print(f"[DEBUG] Entered retrieve_relevant_chunks with query: '{query}'")
-    db = build_or_load_faiss(None)  # Always load the main DB
+    db = build_or_load_faiss(url)  # Use the provided URL
+    if db is None:
+        print("[DEBUG] No FAISS DB available, returning empty list")
+        return []
     retriever = db.as_retriever(search_kwargs={"k": k})
     docs = retriever.invoke(query)
     print(f"[DEBUG] Retrieved {len(docs)} docs from retriever for query: '{query}'")

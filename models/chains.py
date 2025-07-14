@@ -140,7 +140,7 @@ def make_symptom_chain(age, gender, vaccine_visit, symptom, prompt_override=None
         ])
     else:
         # For non-vaccine prompts, use only a minimal summary instruction
-        minimal_summary = "At the end of the Q&A, generate a summary of the symptoms and relevant history for the doctor. Do NOT include headings like Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Autism/ADHD/Learning Disabilities, Physical Activity, Mental Wellbeing, or Pubertal Development unless this is a vaccine visit."
+        minimal_summary = "IMPORTANT: At the end of the Q&A, generate a structured technical summary FOR THE DOCTOR (not the patient) using bullet points. Focus on symptoms, relevant history, and objective observations. Use bullet points (•) and write in medical/technical language. Do NOT include headings like Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Autism/ADHD/Learning Disabilities, Physical Activity, Mental Wellbeing, or Pubertal Development unless this is a vaccine visit."
         prompt = ChatPromptTemplate.from_messages([
             ("system", prompt_text),
             ("system", minimal_summary),
