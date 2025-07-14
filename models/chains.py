@@ -9,6 +9,7 @@ from config.constants import SAMPLE_PRESCRIPTION
 from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 import re
+from utils.prompt_fetcher import fetch_classifier_prompt, fetch_questioner_prompt
 
 def format_docs(docs):
     print("[DEBUG] Context passed to get_info prompt:", docs)
@@ -89,11 +90,41 @@ def select_symptom_prompt(age, gender, vaccine_visit, symptom):
     return SYMPTOM_PROMPTS.get(category, SYMPTOM_PROMPTS["general_child"])
 
 # Dynamic symptom chain
-def make_symptom_chain(age, gender, vaccine_visit, symptom, prompt_override=None):
+def make_symptom_chain(age, gender, vaccine_visit, symptom, prompt_override=None, doctor_id=None, specialty_name=None):
+    # Step 1: Fetch classifier prompt from middleware
+    classifier_prompt_text = None
+    if doctor_id is not None and specialty_name is not None:
+        classifier_prompt_text = fetch_classifier_prompt(specialty_name, doctor_id)
+        if not classifier_prompt_text:
+            print(f"[WARNING] No classifier prompt found for doctor_id={doctor_id}, specialty={specialty_name}, using built-in default.")
+            classifier_prompt_text = SYMPTOM_CLASSIFIER_PROMPT
+    else:
+        classifier_prompt_text = SYMPTOM_CLASSIFIER_PROMPT
+
+    # Build classifier chain with dynamic prompt
+    classifier_prompt_template = ChatPromptTemplate.from_template(classifier_prompt_text)
+    dynamic_classifier_chain = classifier_prompt_template | classifier_llm | StrOutputParser()
+
     if prompt_override is not None:
         prompt_text = prompt_override
     else:
-        prompt_text = select_symptom_prompt(age, gender, vaccine_visit, symptom)
+        # Get the classifier category (prompt key) using the dynamic classifier chain
+        category = dynamic_classifier_chain.invoke({
+            "age": age,
+            "gender": gender,
+            "vaccine_visit": vaccine_visit,
+            "symptom": symptom
+        }).strip()
+        print(f"[DEBUG] Classified prompt category: {category}")
+        # Try built-in prompt first
+        prompt_text = SYMPTOM_PROMPTS.get(category)
+        # If not found, fetch from middleware API
+        if prompt_text is None:
+            print(f"[DEBUG] Fetching prompt from middleware for key: {category}")
+            prompt_text = fetch_questioner_prompt(category)
+            if not prompt_text:
+                print(f"[WARNING] No prompt found for key '{category}', using general_child fallback.")
+                prompt_text = SYMPTOM_PROMPTS["general_child"]
     prompt_vars = [
         ("age", lambda x: x.get("age", "")),
         ("gender", lambda x: x.get("gender", "")),
@@ -115,12 +146,6 @@ def make_symptom_chain(age, gender, vaccine_visit, symptom, prompt_override=None
                 vaccine_key = match.group(0)
     else:
         # Try to detect from the classifier category
-        category = classifier_chain.invoke({
-            "age": age,
-            "gender": gender,
-            "vaccine_visit": vaccine_visit,
-            "symptom": symptom
-        }).strip()
         if category.startswith("vaccine_"):
             is_vaccine_prompt = True
             vaccine_key = category
