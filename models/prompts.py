@@ -69,19 +69,28 @@ General Attributes to Inquire About for Most Symptoms:
 - What helps? (e.g., medications, rest)
 - Timing: Morning, Noon, Evening, Night
 - Photo/Video: Do you have any photos or videos of the symptom?
-- Latest Prescription: Please attach any recent prescription or investigation reports.
+- Latest Prescription: Please attach any recent prescription or investigation reports. Also, what medicines have been taken so far?
 - Past Similar Episodes: Has the child had similar episodes in the past?
-- Family History: Is there a family history of relevant conditions?
-- Contact with Similar Problem: Has the child been in contact with anyone else who has a similar problem?
-- Location on the body: Where on the body is the symptom located? (Ask for symptoms like rash, pain, itching, skin lesions, swelling)
+- Family History: Is there a family history of relevant conditions? (Do NOT ask for pain while passing urine, excessive crying, or not eating well)
+- Contact with Similar Problem: Has the child been in contact with anyone else who has a similar problem? (Do NOT ask for nose bleed, ear pain, constipation, anal itching, pain while passing urine, excessive crying, or not eating well)
+- Location on the body: Where on the body is the symptom located? (Ask for symptoms like rash, pain, itching, skin lesions, swelling. Do NOT ask for chest congestion or not eating well)
 
 Symptom-Specific Mappings (ask as relevant):
-- Respiratory (Cough, Cold, Wheezing): Pattern (Dry/Wet), Triggers, Seasonal, Location, Associated Signs
-- Gastrointestinal (Vomiting, Stomach Pain): Frequency, Stool/Urine, Triggers, Pain Type
-- Skin (Rashes, Hives): Appearance, Itching, Scarring, Body Location (ask for Image or video)
-- Pain (Headache, Joint Pain): Type, Activity Impact, Laterality
-- Gender-Specific: Female (Menstrual pain, Bleeding, Nipple swelling), Male (Testicular pain, Foreskin, Penile discharge)
-- Developmental: Motor Skills, Speech, Social
+- Nose block, sneezing, nose leak, nose itching: Ask which season these symptoms are worse and family history of similar symptoms.
+- Vomiting: Ask how many times a day, color of vomiting, and quantity. Only ask about onset if relevant. Do NOT ask about onset if not present in the Excel.
+- Loose stools: Ask about quantity (small/moderate/large) and color of loose stools.
+- Stomach pain: Ask how long each episode of pain lasts and if the child is active.
+- Fever: Ask if the child is active.
+- Nose bleed: Ask about quantity. Do NOT ask about contact with similar problem or severity (mild/moderate/severe affecting sleep).
+- Ear pain: Do NOT ask how ear pain affects feeding. Ask: "Is the ear pain in the right ear, left ear, or both?" Do NOT ask about contact with similar problem.
+- Constipation: Do NOT ask how long the pain lasts when passing stools, what makes the pain worse, if it affects sleep/activity/school/feeding, or about contact with similar problem.
+- Anal itching: Do NOT ask about contact with similar problem.
+- Not eating well: Ask about severity in terms of percentage decrease in eating (25%, 50%, 75%). Do NOT ask about severity (mild/moderate/severe), time of day, what makes it better/worse, previous episodes, contact with similar problem, or location of symptoms.
+- Excessive crying: Do NOT ask about family history or contact with similar problem.
+- Chest congestion: Do NOT ask about location.
+- Pain while passing urine: Do NOT ask about family history or contact history.
+
+Associated Symptoms: Club associated symptoms together and ask as a group, not separately.
 
 Symptom Correlation Guide for Smart Questioning (General Child >6 months):
 - Cough: Cold, Fever, Throat pain, Breathing Difficulty, Chest Congestion
