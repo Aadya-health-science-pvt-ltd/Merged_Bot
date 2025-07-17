@@ -3,13 +3,13 @@ from langchain_core.runnables import RunnablePassthrough
 from config.llm_config import llm
 from models.prompts import (
     get_info_prompt, followup_prompt, episode_check_prompt,
-    SYMPTOM_PROMPTS, SYMPTOM_SUMMARY_PROMPT, VACCINE_SUMMARY_PROMPTS
+    SYMPTOM_SUMMARY_PROMPT, VACCINE_SUMMARY_PROMPTS
 )
 from config.constants import SAMPLE_PRESCRIPTION
 from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 import re
-from utils.prompt_fetcher import fetch_classifier_prompt, fetch_questioner_prompt
+from utils.prompt_db import get_classifier_prompt, get_questioner_prompt
 
 def format_docs(docs):
     print("[DEBUG] Context passed to get_info prompt:", docs)
@@ -73,28 +73,14 @@ classifier_llm = llm
 classifier_prompt = ChatPromptTemplate.from_template(SYMPTOM_CLASSIFIER_PROMPT)
 classifier_chain = classifier_prompt | classifier_llm | StrOutputParser()
 
-def select_symptom_prompt(age, gender, vaccine_visit, symptom):
-    category = classifier_chain.invoke({
-        "age": age,
-        "gender": gender,
-        "vaccine_visit": vaccine_visit,
-        "symptom": symptom
-    }).strip()
-    print(f"[DEBUG] Classified prompt category: {category}")
-    # Post-process for vaccine gendered keys if needed
-    if category in ["vaccine_10y", "vaccine_11y", "vaccine_16y"]:
-        if str(gender).lower() == "male":
-            category = f"{category}_male"
-        elif str(gender).lower() == "female":
-            category = f"{category}_female"
-    return SYMPTOM_PROMPTS.get(category, SYMPTOM_PROMPTS["general_child"])
+# Remove select_symptom_prompt function (relied on SYMPTOM_PROMPTS)
 
 # Dynamic symptom chain
 def make_symptom_chain(age, gender, vaccine_visit, symptom, prompt_override=None, doctor_id=None, specialty_name=None):
-    # Step 1: Fetch classifier prompt from middleware
+    # Step 1: Fetch classifier prompt from database
     classifier_prompt_text = None
     if doctor_id is not None and specialty_name is not None:
-        classifier_prompt_text = fetch_classifier_prompt(specialty_name, doctor_id)
+        classifier_prompt_text = get_classifier_prompt(specialty_name, doctor_id)
         if not classifier_prompt_text:
             print(f"[WARNING] No classifier prompt found for doctor_id={doctor_id}, specialty={specialty_name}, using built-in default.")
             classifier_prompt_text = SYMPTOM_CLASSIFIER_PROMPT
@@ -116,15 +102,13 @@ def make_symptom_chain(age, gender, vaccine_visit, symptom, prompt_override=None
             "symptom": symptom
         }).strip()
         print(f"[DEBUG] Classified prompt category: {category}")
-        # Try built-in prompt first
-        prompt_text = SYMPTOM_PROMPTS.get(category)
-        # If not found, fetch from middleware API
-        if prompt_text is None:
-            print(f"[DEBUG] Fetching prompt from middleware for key: {category}")
-            prompt_text = fetch_questioner_prompt(category)
+        # Always fetch prompt from database
+        prompt_text = get_questioner_prompt(category)
+        if not prompt_text:
+            print(f"[WARNING] No prompt found for key '{category}', using general_child fallback.")
+            prompt_text = get_questioner_prompt("general_child")
             if not prompt_text:
-                print(f"[WARNING] No prompt found for key '{category}', using general_child fallback.")
-                prompt_text = SYMPTOM_PROMPTS["general_child"]
+                prompt_text = "I'm sorry, I couldn't load the right questions. Please try again later."
     prompt_vars = [
         ("age", lambda x: x.get("age", "")),
         ("gender", lambda x: x.get("gender", "")),

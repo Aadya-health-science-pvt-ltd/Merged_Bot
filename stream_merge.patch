@@ -1,0 +1,609 @@
+diff --git a/app.py b/app.py
+index d47e4ed..b37d002 100644
+--- a/app.py
++++ b/app.py
+@@ -8,9 +8,6 @@ from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
+ from langchain_core.runnables import RunnableConfig
+ from typing import List, Dict, Optional, Literal # Make sure Literal is here for decide_bot_route return type
+ import typing
+-import psutil
+-import gc
+-import logging
+ 
+ import lance_main  # Import everything from lance_main
+ from conversation.chat_state import initialize_symptom_session
+@@ -24,65 +21,6 @@ executor = ThreadPoolExecutor(max_workers=(os.cpu_count() or 2) * 2)
+ conversations = {}
+ SESSION_TIMEOUT = timedelta(minutes=15) # Session expires after 15 minutes of inactivity
+ 
+-# Setup logging
+-logging.basicConfig(level=logging.INFO)
+-logger = logging.getLogger(__name__)
+-
+-# Track app start time for health checks
+-start_time = datetime.now(timezone.utc)
+-
+-def monitor_memory():
+-    """Monitor memory usage and log statistics"""
+-    process = psutil.Process()
+-    memory_mb = process.memory_info().rss / 1024 / 1024
+-    logger.info(f"Memory usage: {memory_mb:.2f} MB, Active conversations: {len(conversations)}")
+-    
+-    if memory_mb > 1000:  # 1GB threshold
+-        logger.warning(f"High memory usage: {memory_mb:.2f} MB")
+-        cleanup_expired_sessions()
+-        gc.collect()
+-    
+-    return memory_mb
+-
+-def cleanup_expired_sessions():
+-    """Clean up expired sessions to free memory"""
+-    current_time = datetime.now(timezone.utc)
+-    expired_count = 0
+-    
+-    for thread_id in list(conversations.keys()):
+-        conv = conversations[thread_id]
+-        if current_time - conv['last_activity'] > SESSION_TIMEOUT:
+-            conversations.pop(thread_id, None)
+-            expired_count += 1
+-    
+-    if expired_count > 0:
+-        logger.info(f"Cleaned up {expired_count} expired sessions")
+-
+-def handle_memory_pressure():
+-    """Handle high memory usage by clearing oldest sessions"""
+-    if len(conversations) > 1000:
+-        logger.warning("High conversation count, clearing oldest sessions")
+-        sorted_conversations = sorted(
+-            conversations.items(), 
+-            key=lambda x: x[1]['last_activity']
+-        )
+-        # Remove oldest 20%
+-        for thread_id, _ in sorted_conversations[:200]:
+-            conversations.pop(thread_id, None)
+-        logger.info("Cleared 200 oldest sessions")
+-
+-@app.route('/health', methods=['GET'])
+-def health_check():
+-    """Health check endpoint for monitoring"""
+-    memory_mb = monitor_memory()
+-    return jsonify({
+-        'status': 'healthy',
+-        'active_conversations': len(conversations),
+-        'memory_usage_mb': round(memory_mb, 2),
+-        'uptime': str(datetime.now(timezone.utc) - start_time),
+-        'session_timeout_minutes': SESSION_TIMEOUT.total_seconds() / 60
+-    })
+-
+ 
+ @app.route('/start_conversation', methods=['POST'])
+ def start_conversation():
+@@ -152,9 +90,6 @@ def send_message():
+     Sends a user message to the chatbot. This endpoint handles routing to the correct bot
+     and managing the conversation history.
+     """
+-    # Monitor memory usage
+-    monitor_memory()
+-    
+     data = request.get_json() or {}
+     print("Received /message payload:", data)  # Debug print
+     thread_id = data.get('thread_id')
+@@ -175,9 +110,6 @@ def send_message():
+ 
+     conv['last_activity'] = datetime.now(timezone.utc) # Update last activity timestamp
+ 
+-    # Handle memory pressure
+-    handle_memory_pressure()
+-
+     # Update all dynamic fields from payload BEFORE constructing ChatState
+     if data.get('appointment_data'):
+         conv['appointment_data'] = data['appointment_data']
+@@ -224,6 +156,8 @@ def send_message():
+         "vaccine_visit": conv['configurable'].get('vaccine_visit'),
+         "symptoms": conv['configurable'].get('symptoms'),
+         "specialty": conv['configurable'].get('specialty'),
++        "consultation_type": conv['configurable'].get('consultation_type'),
++        "doctor_info_url": conv['configurable'].get('doctor_info_url'),
+         "symptom_collection_phase": conv['configurable'].get('symptom_collection_phase'),
+         "collected_symptoms": conv['configurable'].get('collected_symptoms'),
+         "current_symptom_index": conv['configurable'].get('current_symptom_index'),
+@@ -234,7 +168,7 @@ def send_message():
+ 
+     # Ensure symptom session is initialized before invoking the symptom bot
+     if (
+-        (conv['configurable'].get('current_bot_key') == 'symptom' or selected_app == conv.get('symptom_app'))
++        (conv['configurable'].get('current_bot_key') == 'symptom')
+         and (not current_chat_state.get('symptom_prompt'))
+     ):
+         current_chat_state = initialize_symptom_session(current_chat_state)
+@@ -252,6 +186,9 @@ def send_message():
+     })
+ 
+     # --- Routing Logic: Prioritized If-Else Structure ---
++    print(f"[DEBUG] Routing logic - ask_same_episode: {conv['configurable']['ask_same_episode']}")
++    print(f"[DEBUG] Routing logic - is_initial_message: {conv['configurable']['is_initial_message']}")
++    print(f"[DEBUG] Routing logic - current_bot_key: {conv['configurable']['current_bot_key']}")
+ 
+     # Priority 1: Handling "Same Episode" follow-up question (Rule 3's second step)
+     if conv['configurable']['ask_same_episode']:
+@@ -282,10 +219,12 @@ def send_message():
+ 
+     # Priority 2: Initial routing (first message in a new conversation thread)
+     elif conv['configurable']['is_initial_message']:
++        print("[DEBUG] Initial routing - calling decide_bot_route")
+         conv['configurable']['is_initial_message'] = False # Mark as not initial anymore
+ 
+         # Use the external router function from lance_main to decide the initial bot
+         route_decision = lance_main.decide_bot_route(current_chat_state, runnable_config_obj)
++        print(f"[DEBUG] Router decision: {route_decision}")
+         
+         if route_decision == "get_info":
+             selected_app = conv['get_info_app']
+@@ -327,6 +266,13 @@ def send_message():
+ 
+         bot_selection_message = f"Continuing with previously selected bot: {bot_key}."
+ 
++    # Ensure symptom session is initialized if symptom bot is selected
++    if selected_app == conv['symptom_app'] and not current_chat_state.get('symptom_prompt'):
++        print("[DEBUG] Initializing symptom session for symptom bot")
++        current_chat_state = initialize_symptom_session(current_chat_state)
++        conv['configurable']['symptom_prompt'] = current_chat_state.get('symptom_prompt')
++        print("[DEBUG] After initialize_symptom_session, symptom_prompt:", current_chat_state.get('symptom_prompt'))
++
+     # --- Invoke the Selected Bot's LangGraph Application ---
+     if selected_app:
+         print(f"Invoking {bot_selection_message} on thread: {thread_id}")
+diff --git a/conversation/chat_state.py b/conversation/chat_state.py
+index 51a1020..b550188 100644
+--- a/conversation/chat_state.py
++++ b/conversation/chat_state.py
+@@ -22,6 +22,8 @@ class ChatState(TypedDict):
+     vaccine_visit: Optional[str]     # Add this for vaccine visit flag
+     symptoms: Optional[str]          # Renamed from 'symptom' to avoid node conflict
+     specialty: Optional[str]         # Add this
++    consultation_type: Optional[str]  # Add this for consultation type
++    doctor_info_url: Optional[str]   # Add this for doctor's website URL
+     # --- Symptom Collector Memory/State ---
+     symptom_collection_phase: Optional[str]  # "awaiting_symptom", "asking_questions", "awaiting_more_symptoms", "summary"
+     collected_symptoms: Optional[List[Dict]] # List of {"symptom": str, "questions": List[str], "answers": List[str]}
+@@ -57,10 +59,27 @@ def initialize_symptom_session(state: ChatState):
+         gender = "unknown"
+         state["gender"] = "unknown"
+ 
++    # Improved vaccine visit detection
++    # Check if consultation_type contains vaccine-related keywords
++    consultation_type = state.get("consultation_type", "")
++    if not vaccine_visit and consultation_type:
++        vaccine_keywords = ["vaccine", "vaccination", "immunization", "shot"]
++        if any(keyword in consultation_type.lower() for keyword in vaccine_keywords):
++            vaccine_visit = "yes"
++            state["vaccine_visit"] = "yes"
++    
++    # Also check if the symptom message contains vaccine-related keywords
++    if not vaccine_visit and symptom:
++        vaccine_keywords = ["vaccine", "vaccination", "immunization", "shot"]
++        if any(keyword in symptom.lower() for keyword in vaccine_keywords):
++            vaccine_visit = "yes"
++            state["vaccine_visit"] = "yes"
++
+     classifier_input = {
+         "age": age,
+         "gender": gender,
+         "vaccine_visit": vaccine_visit,
++        "consultation_type": consultation_type,
+         "symptom": symptom
+     }
+     print("[DEBUG] Classifier input:", classifier_input)
+diff --git a/conversation/graph_builder.py b/conversation/graph_builder.py
+index 8ef3fea..2bc3268 100644
+--- a/conversation/graph_builder.py
++++ b/conversation/graph_builder.py
+@@ -1,13 +1,9 @@
+ # conversation/graph_builder.py (Revised)
+-import os
+-from langgraph.graph import StateGraph, END, START
+-from langgraph.checkpoint.redis import RedisSaver
++from langgraph.graph import StateGraph, END, START # START might not be strictly needed here anymore, but no harm in keeping it for now
++from langgraph.checkpoint.memory import MemorySaver
+ from conversation.chat_state import ChatState
+-from conversation.nodes import get_info_node, symptom_node, followup_node
+-
+-# Redis configuration for persistent storage
+-REDIS_URL = os.getenv("REDIS_URL")
+-REDIS_KEY_PREFIX = os.getenv("REDIS_KEY_PREFIX", "chatbot:state:")
++from conversation.nodes import get_info_node, symptom_node, followup_node # No need for same_episode_check_node, process_episode_response_node here as they are only used in the main graph if it existed
++# from conversation.router import decide_bot_route # No need to import router here as it's not used in individual graph builders
+ 
+ def build_get_info_graph():
+     """Builds and compiles the graph for the Get Info bot."""
+@@ -15,11 +11,7 @@ def build_get_info_graph():
+     get_info_workflow.add_node("get_info", get_info_node)
+     get_info_workflow.set_entry_point("get_info")
+     get_info_workflow.add_edge("get_info", END)
+-    
+-    # Use Redis for persistent storage
+-    with RedisSaver.from_conn_string(REDIS_URL, key_prefix=REDIS_KEY_PREFIX) as checkpointer:
+-        checkpointer.setup()  # Initialize Redis indices
+-        return get_info_workflow.compile(checkpointer=checkpointer)
++    return get_info_workflow.compile(checkpointer=MemorySaver())
+ 
+ def build_symptom_graph():
+     """Builds and compiles the graph for the Symptom Collector bot."""
+@@ -27,11 +19,7 @@ def build_symptom_graph():
+     symptom_workflow.add_node("symptom", symptom_node)
+     symptom_workflow.set_entry_point("symptom")
+     symptom_workflow.add_edge("symptom", END)
+-    
+-    # Use Redis for persistent storage
+-    with RedisSaver.from_conn_string(REDIS_URL, key_prefix=REDIS_KEY_PREFIX) as checkpointer:
+-        checkpointer.setup()  # Initialize Redis indices
+-        return symptom_workflow.compile(checkpointer=checkpointer)
++    return symptom_workflow.compile(checkpointer=MemorySaver())
+ 
+ def build_followup_graph():
+     """Builds and compiles the graph for the Follow-Up bot."""
+@@ -39,11 +27,7 @@ def build_followup_graph():
+     followup_workflow.add_node("followup", followup_node)
+     followup_workflow.set_entry_point("followup")
+     followup_workflow.add_edge("followup", END)
+-    
+-    # Use Redis for persistent storage
+-    with RedisSaver.from_conn_string(REDIS_URL, key_prefix=REDIS_KEY_PREFIX) as checkpointer:
+-        checkpointer.setup()  # Initialize Redis indices
+-        return followup_workflow.compile(checkpointer=checkpointer)
++    return followup_workflow.compile(checkpointer=MemorySaver())
+ 
+ def debug_print_thread_state(graph, thread_id):
+     """Prints the latest state and full state history for a given thread_id."""
+diff --git a/conversation/nodes.py b/conversation/nodes.py
+index 7348e23..2dab452 100644
+--- a/conversation/nodes.py
++++ b/conversation/nodes.py
+@@ -10,13 +10,23 @@ def get_info_node(state: ChatState):
+     """Node to handle general information requests."""
+     print("--- Executing Get Info Node ---")
+     query = str(state["messages"][-1].content)
+-    # Always retrieve context, regardless of doctor_info_url
+-    context_chunks = retrieve_relevant_chunks(None, query, k=4)
+-    print(f"Retrieved {len(context_chunks)} context chunks")
+-    for i, chunk in enumerate(context_chunks):
+-        print(f"Chunk {i}: {chunk[:200]}...")
+-    context = "\n\n".join(context_chunks)
+-    print(f"Final context passed to LLM: {context[:500]}...")
++    
++    # Get doctor_info_url from state if available
++    doctor_info_url = state.get("doctor_info_url")
++    print(f"[DEBUG] doctor_info_url from state: {doctor_info_url}")
++    
++    # Only retrieve context if we have a valid URL
++    if doctor_info_url:
++        context_chunks = retrieve_relevant_chunks(doctor_info_url, query, k=4)
++        print(f"Retrieved {len(context_chunks)} context chunks")
++        for i, chunk in enumerate(context_chunks):
++            print(f"Chunk {i}: {chunk[:200]}...")
++        context = "\n\n".join(context_chunks)
++        print(f"Final context passed to LLM: {context[:500]}...")
++    else:
++        print("[DEBUG] No doctor_info_url provided, using empty context")
++        context = ""
++    
+     response_content = get_info_chain.invoke({
+         "messages": state["messages"],
+         "context": context,
+diff --git a/conversation/router.py b/conversation/router.py
+index 514a1d2..0618bd4 100644
+--- a/conversation/router.py
++++ b/conversation/router.py
+@@ -10,6 +10,9 @@ def decide_bot_route(state: ChatState, config: RunnableConfig) -> Literal["get_i
+ 
+     doctor_name = config.get('configurable', {}).get('doctor_name')
+     appointment_data = state.get('appointment_data', {})
++    
++    print(f"[DEBUG] doctor_name: {doctor_name}")
++    print(f"[DEBUG] appointment_data: {appointment_data}")
+ 
+     current_time = datetime.now(timezone.utc)
+ 
+@@ -17,6 +20,8 @@ def decide_bot_route(state: ChatState, config: RunnableConfig) -> Literal["get_i
+         appt for appt in appointment_data.get("appointments", [])
+         if appt.get("doctor_name") == doctor_name
+     ]
++    
++    print(f"[DEBUG] doctor_appointments: {doctor_appointments}")
+ 
+     future_appointments = [
+         appt for appt in doctor_appointments
+@@ -27,8 +32,12 @@ def decide_bot_route(state: ChatState, config: RunnableConfig) -> Literal["get_i
+         appt for appt in doctor_appointments
+         if appt.get("appt_status") == "completed"
+     ]
++    
++    print(f"[DEBUG] future_appointments: {future_appointments}")
++    print(f"[DEBUG] past_appointments: {past_appointments}")
+ 
+     first_message = state["messages"][0].content if state["messages"] else ""
++    print(f"[DEBUG] first_message: '{first_message}'")
+ 
+     if first_message.startswith(f"Hello {doctor_name}") and not past_appointments:
+         print("Bot Router -> get_info (Rule 1)")
+diff --git a/models/chains.py b/models/chains.py
+index b9b7766..73ac6e4 100644
+--- a/models/chains.py
++++ b/models/chains.py
+@@ -140,7 +140,7 @@ def make_symptom_chain(age, gender, vaccine_visit, symptom, prompt_override=None
+         ])
+     else:
+         # For non-vaccine prompts, use only a minimal summary instruction
+-        minimal_summary = "At the end of the Q&A, generate a summary of the symptoms and relevant history for the doctor. Do NOT include headings like Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Autism/ADHD/Learning Disabilities, Physical Activity, Mental Wellbeing, or Pubertal Development unless this is a vaccine visit."
++        minimal_summary = "IMPORTANT: At the end of the Q&A, generate a structured technical summary FOR THE DOCTOR (not the patient) using bullet points. Focus on symptoms, relevant history, and objective observations. Use bullet points (•) and write in medical/technical language. Do NOT include headings like Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Autism/ADHD/Learning Disabilities, Physical Activity, Mental Wellbeing, or Pubertal Development unless this is a vaccine visit."
+         prompt = ChatPromptTemplate.from_messages([
+             ("system", prompt_text),
+             ("system", minimal_summary),
+diff --git a/models/prompts.py b/models/prompts.py
+index 24b1312..c660462 100644
+--- a/models/prompts.py
++++ b/models/prompts.py
+@@ -115,7 +115,7 @@ In addition to general questions, ask about:
+ - Discharge from penis: Duration, Colour (white/yellow/blood), Itching (yes/no).
+ - Short penis: Presence.
+ - Swelling in the breast area: Onset, Duration, Progression, Severity, Location on the body.
+-At the end, generate a technical summary for the doctor.
++IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points. Focus on symptoms, relevant history, and objective observations. Use bullet points (•) and write in medical/technical language.
+ '''
+ SYMPTOM_PROMPTS["female_child"] = SOFT_SYSTEM_RULES + STRICT_SYSTEM_RULES + '''
+ Role: Pediatric Symptom Assessment Bot (Female Child).
+@@ -125,7 +125,7 @@ In addition to general questions, ask about:
+ - Excessive stomach pain during periods: Onset, Duration, Progression, Severity, Frequency, Quantity, What makes it worse (spicy food, outside food, stress, coffee, tea), What helps (clear liquids), Past similar episodes, Activity restriction, Itching.
+ - Irregular menstrual periods: Onset, Duration, Progression, Severity, Frequency, Quantity, What makes it worse (stress), What helps (medications), Past similar episodes, Activity restriction, Itching.
+ - Pain in the breast area: Onset, Duration, Progression, Severity, What makes it worse (pressure, tight clothes), What helps (medications).
+-At the end, generate a technical summary for the doctor.
++IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points. Focus on symptoms, relevant history, and objective observations. Use bullet points (•) and write in medical/technical language.
+ '''
+ SYMPTOM_PROMPTS["less_than_6_months"] = SOFT_SYSTEM_RULES + STRICT_SYSTEM_RULES + '''
+ IMPORTANT: If the user mentions multiple symptoms together, ask the user to clarify which symptom started first, which came next, and so on. Then, for each symptom, collect all relevant details (onset, duration, severity, progression, triggers, etc.) one by one, treating each symptom as a separate entity. After finishing one symptom, ask about other likely symptoms (from symptom clustering, in order of score). If the user confirms another symptom, collect full details for that symptom as well. If the user confirms any associated symptom (e.g., cold, sneezing, trauma, etc.) when asked about them, treat each confirmed associated symptom as a new symptom. For each, collect all relevant details (onset, duration, severity, progression, triggers, etc.) one by one, just as you would for the main symptom. For each main symptom, you must proactively ask about each correlated symptom listed in the Symptom Correlation Guide for Smart Questioning. If the user confirms any correlated symptom, treat each as a new symptom and collect all relevant details for each, one by one, before summarizing. Only summarize after all confirmed symptoms have been fully explored.
+@@ -199,7 +199,7 @@ Symptom Correlation Guide for Smart Questioning (Infants <6 months):
+ '''
+ SYMPTOM_PROMPTS["vaccine_6w"] = SOFT_SYSTEM_RULES + STRICT_SYSTEM_RULES + '''
+ Role: Pediatric Vaccine Visit Bot for Age 6 weeks.
+-Ask the following, one at a time, and at the end, generate a technical summary for the doctor using the same headings:
++Ask the following, one at a time, and at the end, generate a structured technical summary FOR THE DOCTOR using bullet points under the same headings. Use bullet points (•) and write in medical/technical language:
+ 
+ Gross Motor:
+ - Does the baby lift and briefly hold their head up (~45°) when placed on their belly (tummy time)?
+@@ -228,7 +228,7 @@ Decreased Urine Output:
+ '''
+ SYMPTOM_PROMPTS["vaccine_10w"] = SOFT_SYSTEM_RULES + STRICT_SYSTEM_RULES + '''
+ Role: Pediatric Vaccine Visit Bot for Age 10 weeks.
+-Ask the following, one at a time, and at the end, generate a technical summary for the doctor using the same headings:
++Ask the following, one at a time, and at the end, generate a structured technical summary FOR THE DOCTOR using bullet points under the same headings. Use bullet points (•) and write in medical/technical language:
+ 
+ Gross Motor:
+ - When you put your baby on their tummy, do they lift their head and upper body up by themselves (Tummy lift)?
+@@ -262,7 +262,7 @@ Decreased Urine Output:
+ '''
+ SYMPTOM_PROMPTS["vaccine_12w"] = SOFT_SYSTEM_RULES + STRICT_SYSTEM_RULES + '''
+ Role: Pediatric Vaccine Visit Bot for Age 12 weeks.
+-Ask the following, one at a time, and at the end, generate a technical summary for the doctor using the same headings:
++Ask the following, one at a time, and at the end, generate a structured technical summary FOR THE DOCTOR using bullet points under the same headings. Use bullet points (•) and write in medical/technical language:
+ 
+ Gross Motor:
+ - When you hold your baby upright under the arms, can they keep their head straight (not flop forward)?
+@@ -296,7 +296,7 @@ Decreased Urine Output:
+ '''
+ SYMPTOM_PROMPTS["vaccine_6m"] = SOFT_SYSTEM_RULES + STRICT_SYSTEM_RULES + '''
+ Role: Pediatric Vaccine Visit Bot for Age 6 months.
+-Ask the following, one at a time, and at the end, generate a technical summary for the doctor using the same headings:
++Ask the following, one at a time, and at the end, generate a structured technical summary FOR THE DOCTOR using bullet points under the same headings. Use bullet points (•) and write in medical/technical language:
+ 
+ Gross Motor:
+ - Does your baby roll from tummy to back or back to tummy on their own (Rolls Over)?
+@@ -1013,7 +1013,7 @@ Immunization:
+ # Vaccine visit prompts by age bucket and all other keys from prompt_updated.txt should be included above.
+ 
+ SYMPTOM_SUMMARY_PROMPT = SOFT_SYSTEM_RULES + STRICT_SYSTEM_RULES + '''
+-At the end of the Q&A, generate a structured technical summary for the doctor using the following headings:
++IMPORTANT: At the end of the Q&A, generate a structured technical summary FOR THE DOCTOR (not the patient) using bullet points under the following headings:
+ - Gross Motor
+ - Fine Motor
+ - Speech
+@@ -1026,7 +1026,14 @@ At the end of the Q&A, generate a structured technical summary for the doctor us
+ - Physical Activity
+ - Mental Wellbeing
+ - Pubertal Development
+-Summarize the patient's responses under each heading. If a heading is not relevant, omit it.
++
++Format the summary as follows:
++• Use bullet points (•) for each detail
++• Write in medical/technical language for the doctor
++• Include only relevant information under each heading
++• If a heading is not relevant, omit it entirely
++• Focus on objective facts and observations, not patient opinions
++• Use concise, professional medical terminology
+ '''
+ 
+ FOLLOWUP_SYSTEM_PROMPT = SOFT_SYSTEM_RULES + STRICT_SYSTEM_RULES + """You are a post-appointment follow-up assistant for {clinic_name}.
+@@ -1062,30 +1069,30 @@ Current user message: {current_message}
+ # Age-appropriate summary prompts for each vaccine visit
+ VACCINE_SUMMARY_PROMPTS = {
+     # Infants (6w, 10w, 12w, 6m, 7m, 9m, 12m)
+-    "vaccine_6w": '''At the end, summarize under: Gross Motor, Speech, Social, Vision, Hearing, Feeding, Immunization.''',
+-    "vaccine_10w": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization.''',
+-    "vaccine_12w": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization.''',
+-    "vaccine_6m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization.''',
+-    "vaccine_7m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization.''',
+-    "vaccine_9m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization.''',
+-    "vaccine_12m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization.''',
++    "vaccine_6w": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Speech, Social, Vision, Hearing, Feeding, Immunization. Use bullet points (•) and write in medical/technical language.''',
++    "vaccine_10w": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization. Use bullet points (•) and write in medical/technical language.''',
++    "vaccine_12w": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization. Use bullet points (•) and write in medical/technical language.''',
++    "vaccine_6m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization. Use bullet points (•) and write in medical/technical language.''',
++    "vaccine_7m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization. Use bullet points (•) and write in medical/technical language.''',
++    "vaccine_9m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization. Use bullet points (•) and write in medical/technical language.''',
++    "vaccine_12m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Immunization. Use bullet points (•) and write in medical/technical language.''',
+     # Toddlers/Preschool (15m–60m)
+-    "vaccine_15m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
+-    "vaccine_18m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
+-    "vaccine_20m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
+-    "vaccine_24m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
+-    "vaccine_36m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
+-    "vaccine_42m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
+-    "vaccine_48m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
+-    "vaccine_54m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
+-    "vaccine_60m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
+-    "vaccine_66m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
+-    "vaccine_72m": '''At the end, summarize under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization.''',
++    "vaccine_15m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization. Use bullet points (•) and write in medical/technical language.''',
++    "vaccine_18m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization. Use bullet points (•) and write in medical/technical language.''',
++    "vaccine_20m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization. Use bullet points (•) and write in medical/technical language.''',
++    "vaccine_24m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization. Use bullet points (•) and write in medical/technical language.''',
++    "vaccine_36m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization. Use bullet points (•) and write in medical/technical language.''',
++    "vaccine_42m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization. Use bullet points (•) and write in medical/technical language.''',
++    "vaccine_48m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization. Use bullet points (•) and write in medical/technical language.''',
++    "vaccine_54m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization. Use bullet points (•) and write in medical/technical language.''',
++    "vaccine_60m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization. Use bullet points (•) and write in medical/technical language.''',
++    "vaccine_66m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization. Use bullet points (•) and write in medical/technical language.''',
++    "vaccine_72m": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Gross Motor, Fine Motor, Speech, Social, Vision, Hearing, Feeding, Screen Exposure, Immunization. Use bullet points (•) and write in medical/technical language.''',
+     # School Age (add Physical Activity, Mental Wellbeing, Diet/Exercise)
+-    "vaccine_10y_male": '''At the end, summarize under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization.''',
+-    "vaccine_10y_female": '''At the end, summarize under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization.''',
+-    "vaccine_11y_male": '''At the end, summarize under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization.''',
+-    "vaccine_11y_female": '''At the end, summarize under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization.''',
+-    "vaccine_16y_male": '''At the end, summarize under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization.''',
+-    "vaccine_16y_female": '''At the end, summarize under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization.''',
++    "vaccine_10y_male": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization. Use bullet points (•) and write in medical/technical language.''',
++    "vaccine_10y_female": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization. Use bullet points (•) and write in medical/technical language.''',
++    "vaccine_11y_male": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization. Use bullet points (•) and write in medical/technical language.''',
++    "vaccine_11y_female": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization. Use bullet points (•) and write in medical/technical language.''',
++    "vaccine_16y_male": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization. Use bullet points (•) and write in medical/technical language.''',
++    "vaccine_16y_female": '''IMPORTANT: At the end, generate a structured technical summary FOR THE DOCTOR using bullet points under: Physical Development, Pubertal Development, Mental Wellbeing, Screen Exposure, Diet and Exercise, Immunization. Use bullet points (•) and write in medical/technical language.''',
+ }
+\ No newline at end of file
+diff --git a/streamlit_app.py b/streamlit_app.py
+index 88bb4cf..988e6a0 100644
+--- a/streamlit_app.py
++++ b/streamlit_app.py
+@@ -89,7 +89,7 @@ def qa_wizard():
+             "consultation_type": answers["consultation_type"],
+             "specialty": answers["specialty"],
+             "clinic_name": answers["clinic_name"],
+-            "symptoms": answers["symptoms"],
++            "symptoms": answers["symptoms"] if answers["symptoms"] and answers["symptoms"].strip() and answers["symptoms"].lower() != "none" else "",
+             "appointment_data": {"appointments": appointments}
+         }
+         st.json(payload)
+@@ -102,21 +102,38 @@ def qa_wizard():
+                     st.session_state.patient_info = payload
+                     st.session_state.messages = []  # Start with empty message list
+                     st.success("Conversation started!")
+-                    # Immediately send the symptom as the first message
+-                    initial_message = payload.get("symptoms", "")
+-                    if not initial_message:
+-                        st.warning("Symptom is required to start the conversation.")
+-                        return
+-                    initial_payload = {
+-                        "thread_id": thread_id,
+-                        "age": payload.get("age"),
+-                        "gender": payload.get("gender"),
+-                        "vaccine_visit": "yes" if "vaccine" in payload.get("consultation_type", "").lower() else "no",
+-                        "symptoms": initial_message,
+-                        "message": initial_message,
+-                        "specialty": payload.get("specialty"),
+-                        "message_type": "human"
+-                    }
++                    # Check if there are appointments to determine if symptoms are required
++                    has_appointments = payload.get("appointment_data", {}).get("appointments", [])
++                    
++                    # If no appointments, allow starting without symptoms (will route to get_info)
++                    if not has_appointments:
++                        # Start with a general greeting to trigger get_info bot
++                        initial_message = "Hello"
++                        initial_payload = {
++                            "thread_id": thread_id,
++                            "age": payload.get("age"),
++                            "gender": payload.get("gender"),
++                            "vaccine_visit": "yes" if "vaccine" in payload.get("consultation_type", "").lower() else "no",
++                            "message": initial_message,
++                            "specialty": payload.get("specialty"),
++                            "message_type": "human"
++                        }
++                    else:
++                        # If there are appointments, require symptoms
++                        initial_message = payload.get("symptoms", "")
++                        if not initial_message:
++                            st.warning("Symptom is required to start the conversation.")
++                            return
++                        initial_payload = {
++                            "thread_id": thread_id,
++                            "age": payload.get("age"),
++                            "gender": payload.get("gender"),
++                            "vaccine_visit": "yes" if "vaccine" in payload.get("consultation_type", "").lower() else "no",
++                            "symptoms": initial_message,
++                            "message": initial_message,
++                            "specialty": payload.get("specialty"),
++                            "message_type": "human"
++                        }
+                     try:
+                         resp_msg = requests.post(f"{BACKEND_URL}/message", json=initial_payload)
+                         if resp_msg.status_code == 200:
+@@ -235,11 +252,31 @@ if st.session_state.conversation_started:
+             "age": patient_info.get("age"),
+             "gender": patient_info.get("gender"),
+             "vaccine_visit": "yes" if "vaccine" in patient_info.get("consultation_type", "").lower() else "no",
+-            "symptoms": user_input,
+             "message": user_input,
+             "specialty": patient_info.get("specialty"),
+             "message_type": "human"
+         }
++        
++        # Only set symptoms if the user is actually providing symptoms
++        # This should be determined by the current bot context or user intent
++        # For now, we'll only set symptoms if the last bot selection was symptom-related
++        # OR if this is the first message and user is clearly describing symptoms
++        should_set_symptoms = False
++        
++        # Check if we're in a symptom context
++        if (st.session_state.last_bot_selection and 
++            ('symptom' in st.session_state.last_bot_selection.lower() or
++             'followup' in st.session_state.last_bot_selection.lower())):
++            should_set_symptoms = True
++        
++        # Check if this is the first message and user is clearly describing symptoms
++        elif (not st.session_state.last_bot_selection and 
++              any(symptom_word in user_input.lower() for symptom_word in 
++                   ['fever', 'cough', 'cold', 'pain', 'vomit', 'diarrhea', 'rash', 'headache', 'stomach', 'ear', 'throat'])):
++            should_set_symptoms = True
++        
++        if should_set_symptoms:
++            payload["symptoms"] = user_input
+         # Always include doctor_info_url for info queries after embedding
+         if show_doctor_info_url and st.session_state.doctor_info_url.strip():
+             payload["doctor_info_url"] = st.session_state.doctor_info_url.strip()
+diff --git a/utils/general_utils.py b/utils/general_utils.py
+index b7dd599..f7aad32 100644
+--- a/utils/general_utils.py
++++ b/utils/general_utils.py
+@@ -72,6 +72,12 @@ def get_faiss_db_path(url=None):
+ def build_or_load_faiss(url, force_rebuild=False):
+     db_path = get_faiss_db_path()
+     print(f"[DEBUG] build_or_load_faiss: db_path={db_path}, force_rebuild={force_rebuild}")
++    
++    # If no URL is provided, return None to indicate no context available
++    if not url:
++        print("[DEBUG] No URL provided, returning None")
++        return None
++        
+     if not force_rebuild and os.path.exists(db_path):
+         print(f"Loading FAISS DB from {db_path}")
+         return FAISS.load_local(db_path, OpenAIEmbeddings(), allow_dangerous_deserialization=True)
+@@ -88,7 +94,10 @@ def build_or_load_faiss(url, force_rebuild=False):
+ 
+ def retrieve_relevant_chunks(url, query, k=4):
+     print(f"[DEBUG] Entered retrieve_relevant_chunks with query: '{query}'")
+-    db = build_or_load_faiss(None)  # Always load the main DB
++    db = build_or_load_faiss(url)  # Use the provided URL
++    if db is None:
++        print("[DEBUG] No FAISS DB available, returning empty list")
++        return []
+     retriever = db.as_retriever(search_kwargs={"k": k})
+     docs = retriever.invoke(query)
+     print(f"[DEBUG] Retrieved {len(docs)} docs from retriever for query: '{query}'")
