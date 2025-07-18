@@ -34,6 +34,32 @@ class QuestionerPrompt(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+class followUpClassifierPrompt(Base):
+    __tablename__ = 'followUp_classifier_prompts'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    specialty_name = Column(String(100), nullable=False)
+    doctor_id = Column(Integer, nullable=False)
+    prompt_text = Column(Text, nullable=False)
+    version = Column(String(20), default='1.0')
+    is_active = Column(Boolean, default=True)
+    is_default = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class followUpQuestionerPrompt(Base):
+    __tablename__ = 'followUp_questioner_prompts'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    classifier_prompt_ids = Column(ARRAY(Integer), nullable=False)
+    prompt_key = Column(String(100), nullable=False)
+    prompt_text = Column(Text, nullable=False)
+    summary_prompt = Column(Text)
+    version = Column(String(20), default='1.0')
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 def get_database_url():
     db_host = os.getenv('DB_HOST', 'localhost')
     db_port = os.getenv('DB_PORT', '5432')
