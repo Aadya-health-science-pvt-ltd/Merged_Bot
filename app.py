@@ -13,6 +13,7 @@ import lance_main  # Import everything from lance_main
 from conversation.chat_state import initialize_symptom_session
 
 load_dotenv()
+api_key = os.getenv("OPENAI_API_KEY")
 
 app = Flask(__name__)
 
@@ -140,43 +141,6 @@ def send_message():
     bot_selection_message = None # Message indicating which bot was selected
     reply = '' # The AI's response
 
-    # --- Prepare ChatState and RunnableConfig for bot invocation ---
-    # The ChatState passed to invoke() should contain the full history for the bot's context.
-    current_chat_state = typing.cast(lance_main.ChatState, {
-        "messages": conv['configurable']['current_thread_history'],
-        "patient_status": conv['configurable'].get('patient_status'),
-        "appointment_data": conv['appointment_data'],
-        "prescription": conv['configurable']['prescription'],
-        "symptom_summary": conv['configurable']['symptom_summary'],
-        "doctor_name": conv['configurable'].get('doctor_name'),
-        "same_episode_response": conv['configurable'].get('same_episode_response'),
-        "age_group": conv['configurable'].get('age_group'),
-        "age": conv['configurable'].get('age'),
-        "gender": conv['configurable'].get('gender'),
-        "vaccine_visit": conv['configurable'].get('vaccine_visit'),
-        "symptoms": conv['configurable'].get('symptoms'),
-        "specialty": conv['configurable'].get('specialty'),
-        "consultation_type": conv['configurable'].get('consultation_type'),
-        "doctor_info_url": conv['configurable'].get('doctor_info_url'),
-        "symptom_collection_phase": conv['configurable'].get('symptom_collection_phase'),
-        "collected_symptoms": conv['configurable'].get('collected_symptoms'),
-        "current_symptom_index": conv['configurable'].get('current_symptom_index'),
-        "current_question_index": conv['configurable'].get('current_question_index'),
-        "symptom_prompt": conv['configurable'].get('symptom_prompt'),
-        # Only include keys that are part of ChatState TypedDict
-    })
-
-    # Ensure symptom session is initialized before invoking the symptom bot
-    if (
-        (conv['configurable'].get('current_bot_key') == 'symptom')
-        and (not current_chat_state.get('symptom_prompt'))
-    ):
-        current_chat_state = initialize_symptom_session(current_chat_state)
-        conv['configurable']['symptom_prompt'] = current_chat_state.get('symptom_prompt')
-        print("[DEBUG] After initialize_symptom_session, symptom_prompt:", current_chat_state.get('symptom_prompt'))
-        current_chat_state['messages'].append(HumanMessage(content='start'))
-        current_chat_state['messages'].append(HumanMessage(content='Which bot are you or what can you assist me with?'))
-
     # RunnableConfig for LangGraph's checkpointer (memory) and other configurable parameters
     runnable_config_obj = RunnableConfig(configurable={
         "thread_id": thread_id, # CRITICAL: This links to the MemorySaver for each bot
@@ -184,6 +148,14 @@ def send_message():
         "clinic_name": conv['configurable']['clinic_name'],
         "specialty": conv['configurable']['specialty']
     })
+
+    # Ensure appointment_data is present for routing
+    if not conv.get('appointment_data') or not conv['appointment_data']:
+        conv['appointment_data'] = conversations[thread_id].get('appointment_data', {})
+    print('[DEBUG] appointment_data before routing:', conv['appointment_data'])
+
+    # Ensure appointment_data is present in the configurable state for routing
+    conv['configurable']['appointment_data'] = conv['appointment_data']
 
     # --- Routing Logic: Prioritized If-Else Structure ---
     print(f"[DEBUG] Routing logic - ask_same_episode: {conv['configurable']['ask_same_episode']}")
@@ -200,30 +172,29 @@ def send_message():
             previous_appointment = next((appt for appt in conv['appointment_data'].get("appointments", []) if appt.get("appt_status") == "completed" and appt.get("doctor_name") == conv['configurable']['doctor_name']), None)
             if previous_appointment:
                 # Update current state with previous prescription and symptom summary
-                current_chat_state['prescription'] = previous_appointment.get("prescription", current_chat_state['prescription'])
-                current_chat_state['symptom_summary'] = previous_appointment.get("symptom-summary", current_chat_state['symptom_summary'])
-                conv['configurable']['prescription'] = current_chat_state['prescription'] # Update conv state too
-                conv['configurable']['symptom_summary'] = current_chat_state['symptom_summary'] # Update conv state too
+                prescription = previous_appointment.get("prescription", None)
+                symptom_summary = previous_appointment.get("symptom-summary", None)
+                conv['configurable']['prescription'] = prescription
+                conv['configurable']['symptom_summary'] = symptom_summary
                 print("User confirmed same episode. Routing to Symptom Bot with previous context.")
             else:
                 print("Previous appointment details not found for continuity. Starting fresh symptom collection.")
-            selected_app = conv['symptom_app']
-            bot_selection_message = "Symptom Bot selected (continuing previous episode)."
             conv['configurable']['current_bot_key'] = 'symptom' # Set symptom bot as active
-
+            return jsonify({'reply': 'Continuing with previous episode. Please describe any new symptoms or concerns.'}), 200
         else: # user_response is 'no' or anything else
             print("User indicated new episode. Routing to Symptom Bot for fresh collection.")
-            selected_app = conv['symptom_app']
-            bot_selection_message = "Symptom Bot selected (new episode)."
             conv['configurable']['current_bot_key'] = 'symptom' # Set symptom bot as active
+            return jsonify({'reply': 'Starting a new episode. Please describe your current symptoms.'}), 200
 
     # Priority 2: Initial routing (first message in a new conversation thread)
     elif conv['configurable']['is_initial_message']:
         print("[DEBUG] Initial routing - calling decide_bot_route")
         conv['configurable']['is_initial_message'] = False # Mark as not initial anymore
 
+        # Ensure 'messages' key is present for routing
+        conv['configurable']['messages'] = conv['configurable']['current_thread_history']
         # Use the external router function from lance_main to decide the initial bot
-        route_decision = lance_main.decide_bot_route(current_chat_state, runnable_config_obj)
+        route_decision = lance_main.decide_bot_route(conv['configurable'], runnable_config_obj)
         print(f"[DEBUG] Router decision: {route_decision}")
         
         if route_decision == "get_info":
@@ -267,18 +238,31 @@ def send_message():
         bot_selection_message = f"Continuing with previously selected bot: {bot_key}."
 
     # Ensure symptom session is initialized if symptom bot is selected
-    if selected_app == conv['symptom_app'] and not current_chat_state.get('symptom_prompt'):
-        print("[DEBUG] Initializing symptom session for symptom bot")
-        current_chat_state = initialize_symptom_session(current_chat_state)
-        conv['configurable']['symptom_prompt'] = current_chat_state.get('symptom_prompt')
-        print("[DEBUG] After initialize_symptom_session, symptom_prompt:", current_chat_state.get('symptom_prompt'))
+    if conv['configurable'].get('current_bot_key') == 'symptom' and not conv['configurable'].get('symptom_prompt'):
+        conv['configurable'] = initialize_symptom_session(conv['configurable'])
+        conv['configurable']['symptom_prompt'] = conv['configurable'].get('symptom_prompt')
+        print("[DEBUG] After initialize_symptom_session, symptom_prompt:", conv['configurable'].get('symptom_prompt'))
+        conv['configurable']['messages'] = conv['configurable']['current_thread_history']
+        conv['configurable']['messages'].append(HumanMessage(content='start'))
+        conv['configurable']['messages'].append(HumanMessage(content='Which bot are you or what can you assist me with?'))
+
+    # Ensure followup session is initialized if followup bot is selected
+    from conversation.chat_state import initialize_followup_session
+    if conv['configurable'].get('current_bot_key') == 'followup' and not conv['configurable'].get('followup_prompt'):
+        conv['configurable'] = initialize_followup_session(conv['configurable'])
+        conv['configurable']['followup_prompt'] = conv['configurable'].get('followup_prompt')
+        print("[DEBUG] After initialize_followup_session, followup_prompt:", conv['configurable'].get('followup_prompt'))
+        conv['configurable']['messages'] = conv['configurable']['current_thread_history']
+
+    # Ensure 'messages' key is present for the bot state (set after any session initialization)
+    conv['configurable']['messages'] = conv['configurable']['current_thread_history']
 
     # --- Invoke the Selected Bot's LangGraph Application ---
     if selected_app:
         print(f"Invoking {bot_selection_message} on thread: {thread_id}")
         
         # Execute the selected bot's graph in a separate thread to avoid blocking Flask
-        future = executor.submit(lambda: selected_app.invoke(current_chat_state, runnable_config_obj))
+        future = executor.submit(lambda: selected_app.invoke(conv['configurable'], runnable_config_obj))
         
         state_after_invoke = future.result() # Get the result from the bot
 

@@ -1,0 +1,28 @@
+{
+  "thread_id": "AbhishekA9813",
+  "doctor_name": "Dr Balachandra BV",
+  "clinic_name": "Chirayu Multispeciality  clinic",
+  "specialty": "Consultant Pediatrician & Allergy Asthma Specialist",
+  "age": "24 years",
+  "gender": "male",
+  "consultation_type": "consultant pediatrician & allergy asthma specialist",
+  "bot_type": "followup",
+  "appointment_data": {
+    "appointments": [
+      {
+        "appt_id": "9814",
+        "appt_datetime": "2025-07-18T22:52:00",
+        "appt_status": "booked",
+        "doctor_name": "Dr Balachandra BV",
+        "procedure_name": "Follow up Child Consultation",
+        "procedure_keyword": "post-consultation",
+        "procedures_target_id": "364",
+        "dob": "2000-08-16",
+        "gender": "male",
+        "symptom-summary": "Thank you. Based on what you have shared, I will summarize the details gathered:\n\n- Primary complaint: Vomiting due to drug allergy\n- Frequency/Duration: Occasionally, with the most recent episode starting 2 days ago\n- Intensity: 5\n- Impact on lifestyle: None\n- Associated symptoms: None\n- Environmental conditions: None\n- Family history: No relevant history\n- Possible triggers: Medicines\n- Treatment history: None tried\n\n*Done.*",
+        "prescription": "1. Dolonol Tablet\n   Dosage: 1 tablet\n   Frequency: 1-1-1 (every 8 hours), Three times a day\n   Duration: 1 days\n   Route: Oral\n   Instructions: Take after food\n   Quantity: 0",
+        "pre-consultation_id": "9813"
+      }
+    ]
+  }
+} 

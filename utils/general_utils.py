@@ -15,6 +15,12 @@ from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import WebBaseLoader
+from dotenv import load_dotenv
+
+
+load_dotenv()
+
+api_key = os.getenv("OPENAI_API_KEY")
 
 def needs_retrieval(query: str, classifier_chain) -> bool:
     """Determine if context retrieval is needed using LLM."""

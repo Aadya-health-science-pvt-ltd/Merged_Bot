@@ -6,8 +6,7 @@ from typing import Dict, Any
 from config.constants import SAMPLE_PRESCRIPTION
 from utils.general_utils import retrieve_relevant_chunks
 from langchain.prompts import ChatPromptTemplate
-from langchain.output_parsers import StrOutputParser
-
+from langchain_core.output_parsers import StrOutputParser
 def get_info_node(state: ChatState):
     """Node to handle general information requests."""
     print("--- Executing Get Info Node ---")
@@ -20,11 +19,11 @@ def get_info_node(state: ChatState):
     # Only retrieve context if we have a valid URL
     if doctor_info_url:
         context_chunks = retrieve_relevant_chunks(doctor_info_url, query, k=4)
-    print(f"Retrieved {len(context_chunks)} context chunks")
-    for i, chunk in enumerate(context_chunks):
-        print(f"Chunk {i}: {chunk[:200]}...")
-    context = "\n\n".join(context_chunks)
-    print(f"Final context passed to LLM: {context[:500]}...")
+        print(f"Retrieved {len(context_chunks)} context chunks")
+        for i, chunk in enumerate(context_chunks):
+            print(f"Chunk {i}: {chunk[:200]}...")
+        context = "\n\n".join(context_chunks)
+        print(f"Final context passed to LLM: {context[:500]}...")
     else:
         print("[DEBUG] No doctor_info_url provided, using empty context")
         context = ""
@@ -87,7 +86,8 @@ def followup_node(state: ChatState):
     input_dict = {
         "messages": state["messages"],
         "symptom_summary": state.get("symptom_summary", ""),
-        "prescription": state.get("prescription", "")
+        "prescription": state.get("prescription", ""),
+        "clinic_name": state.get("clinic_name", "")
     }
     response_content = (followup_prompt_template | llm | StrOutputParser()).invoke(input_dict)
     return {"messages": state["messages"] + [AIMessage(content=response_content)]}
