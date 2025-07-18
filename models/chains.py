@@ -169,3 +169,23 @@ followup_chain = (
 )
 
 episode_check_chain = episode_check_prompt | llm | StrOutputParser()
+
+# Add followup classifier prompt and chain
+FOLLOWUP_CLASSIFIER_PROMPT = '''
+You are a medical triage classifier for a followup bot. Given the following inputs:
+
+- Age: {age}
+- Gender: {gender}
+- Consultation type: {consultation_type}
+- Symptom summary: {symptom_summary}
+- Prescription: {prescription}
+
+Classify the case as one of the following:
+- "child_consultation" (for general child followup consultations)
+- "allergy_asthma_consultation" (for followup consultations related to allergy or asthma, e.g., if the consultation type or summary mentions allergy, asthma, wheezing, sneezing, eczema, hives, etc.)
+
+Return only the category name. Do not explain your answer.
+'''
+
+followup_classifier_prompt = ChatPromptTemplate.from_template(FOLLOWUP_CLASSIFIER_PROMPT)
+followup_classifier_chain = followup_classifier_prompt | classifier_llm | StrOutputParser()

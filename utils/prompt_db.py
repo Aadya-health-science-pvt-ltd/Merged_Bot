@@ -1,4 +1,4 @@
-from middleware.config.db import SessionLocal, ClassifierPrompt, QuestionerPrompt
+from middleware.config.db import SessionLocal, ClassifierPrompt, QuestionerPrompt, followUpQuestionerPrompt
 
 def get_classifier_prompt(specialty_name: str, doctor_id: int) -> str:
     session = SessionLocal()
@@ -19,4 +19,14 @@ def get_questioner_prompt(prompt_key: str) -> str:
         ).first()
         return prompt.prompt_text if prompt else ""
     finally:
-        session.close() 
+        session.close()
+
+def get_followup_questioner_prompt(prompt_key: str) -> str:
+    session = SessionLocal()
+    try:
+        prompt = session.query(followUpQuestionerPrompt).filter(
+            followUpQuestionerPrompt.prompt_key == prompt_key
+        ).first()
+        return prompt.prompt_text if prompt else None
+    finally:
+        session.close()

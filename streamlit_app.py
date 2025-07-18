@@ -120,20 +120,20 @@ def qa_wizard():
                         }
                     else:
                         # If there are appointments, require symptoms
-                        initial_message = payload.get("symptoms", "")
-                        if not initial_message:
-                            st.warning("Symptom is required to start the conversation.")
-                            return
-                        initial_payload = {
-                            "thread_id": thread_id,
-                            "age": payload.get("age"),
-                            "gender": payload.get("gender"),
-                            "vaccine_visit": "yes" if "vaccine" in payload.get("consultation_type", "").lower() else "no",
-                            "symptoms": initial_message,
-                            "message": initial_message,
-                            "specialty": payload.get("specialty"),
-                            "message_type": "human"
-                        }
+                    initial_message = payload.get("symptoms", "")
+                    if not initial_message:
+                        st.warning("Symptom is required to start the conversation.")
+                        return
+                    initial_payload = {
+                        "thread_id": thread_id,
+                        "age": payload.get("age"),
+                        "gender": payload.get("gender"),
+                        "vaccine_visit": "yes" if "vaccine" in payload.get("consultation_type", "").lower() else "no",
+                        "symptoms": initial_message,
+                        "message": initial_message,
+                        "specialty": payload.get("specialty"),
+                        "message_type": "human"
+                    }
                     try:
                         resp_msg = requests.post(f"{BACKEND_URL}/message", json=initial_payload)
                         if resp_msg.status_code == 200:

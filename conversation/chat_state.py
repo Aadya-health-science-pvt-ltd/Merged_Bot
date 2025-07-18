@@ -4,9 +4,9 @@
 # conversation/chat_state.py
 from typing import TypedDict, Annotated, Sequence, Literal, Optional, List, Dict, Any
 from langchain_core.messages import BaseMessage
-from utils.prompt_db import get_questioner_prompt
+from utils.prompt_db import get_questioner_prompt, get_followup_questioner_prompt
 import re
-from models.chains import classifier_chain
+from models.chains import classifier_chain, followup_classifier_chain
 
 AppointmentData = Dict[str, any]
 
@@ -33,6 +33,7 @@ class ChatState(TypedDict):
     current_symptom_index: Optional[int]     # Which symptom is being processed
     current_question_index: Optional[int]    # Which question for the current symptom
     symptom_prompt: Optional[str]            # Stores the selected prompt for the session
+    followup_prompt: Optional[str]           # Stores the selected followup prompt for the session
 
 def initialize_symptom_session(state: ChatState):
     """Initializes the symptom session by running the classifier and storing the selected prompt in state."""
@@ -118,4 +119,50 @@ def initialize_symptom_session(state: ChatState):
             selected_prompt = "I'm sorry, I couldn't load the right questions. Please try again later."
     print("[DEBUG] Final selected prompt:\n", selected_prompt)
     state["symptom_prompt"] = selected_prompt
+    return state
+
+def initialize_followup_session(state: ChatState):
+    """Initializes the followup session by running the followup classifier and storing the selected prompt in state."""
+    age = state.get("age", "") or state.get("age_group", "")
+    gender = state.get("gender", "")
+    consultation_type = state.get("consultation_type", "")
+    symptom_summary = state.get("symptom_summary", "")
+    prescription = state.get("prescription", "")
+
+    # Fallbacks for missing data
+    if not age or not re.search(r"\d+", str(age)):
+        print(f"[WARNING] Invalid or missing age: '{age}'. Defaulting to '9 years'.")
+        age = "9 years"
+        state["age"] = "9 years"
+    if not gender:
+        print(f"[WARNING] Gender not provided in state. Defaulting to 'unknown'.")
+        gender = "unknown"
+        state["gender"] = "unknown"
+    if not consultation_type:
+        print(f"[WARNING] Consultation type not provided. Defaulting to 'child consultation'.")
+        consultation_type = "child consultation"
+        state["consultation_type"] = "child consultation"
+
+    classifier_input = {
+        "age": age,
+        "gender": gender,
+        "consultation_type": consultation_type,
+        "symptom_summary": symptom_summary,
+        "prescription": prescription
+    }
+    print("[DEBUG] Followup Classifier input:", classifier_input)
+    # Use the followup classifier chain to get the prompt key
+    prompt_key = followup_classifier_chain.invoke(classifier_input).strip()
+    print("[DEBUG] Followup Classifier output (prompt_key):", prompt_key)
+
+    # Fetch the followup questioner prompt using the prompt_key
+    selected_prompt = get_followup_questioner_prompt(prompt_key)
+    if not selected_prompt:
+        print(f"[WARNING] Could not fetch followup prompt for key '{prompt_key}'. Using 'child_consultation' as fallback.")
+        selected_prompt = get_followup_questioner_prompt("child_consultation")
+        if not selected_prompt:
+            print(f"[ERROR] Could not fetch fallback followup prompt for key 'child_consultation'. Using default message.")
+            selected_prompt = "I'm sorry, I couldn't load the right followup questions. Please try again later."
+    print("[DEBUG] Final selected followup prompt:\n", selected_prompt)
+    state["followup_prompt"] = selected_prompt
     return state

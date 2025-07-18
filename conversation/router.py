@@ -25,12 +25,12 @@ def decide_bot_route(state: ChatState, config: RunnableConfig) -> Literal["get_i
 
     future_appointments = [
         appt for appt in doctor_appointments
-        if appt.get("appt_status") == "booked" and
+        if appt.get("procedure_keyword") == "pre-consultation" and
            (datetime.fromisoformat(appt.get("appt_datetime")).replace(tzinfo=timezone.utc) - current_time).total_seconds() < 48 * 3600
     ]
     past_appointments = [
         appt for appt in doctor_appointments
-        if appt.get("appt_status") == "completed"
+        if appt.get("procedure_keyword") == "post-consultation"
     ]
     
     print(f"[DEBUG] future_appointments: {future_appointments}")

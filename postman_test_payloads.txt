@@ -1,0 +1,99 @@
+# Postman Test Payloads for Each Bot
+
+## 1. Get Info Bot
+
+### /start_conversation
+{
+  "thread_id": "GetInfoTest1",
+  "doctor_name": "Dr Balachandra BV",
+  "clinic_name": "Chirayu Multispeciality clinic",
+  "specialty": "Consultant Pediatrician & Allergy Asthma Specialist",
+  "age": 8,
+  "gender": "male",
+  "consultation_type": "paediatrics"
+}
+
+### /message
+{
+  "thread_id": "GetInfoTest1",
+  "message": "What are the clinic timings?"
+}
+
+---
+
+## 2. Symptom Bot (future appointment within 48 hours)
+
+### /start_conversation
+{
+  "thread_id": "SymptomTest1",
+  "doctor_name": "Dr Balachandra BV",
+  "clinic_name": "Chirayu Multispeciality clinic",
+  "specialty": "Consultant Pediatrician & Allergy Asthma Specialist",
+  "age": 8,
+  "gender": "male",
+  "consultation_type": "paediatrics",
+  "symptoms": "fever, cough",
+  "appointment_data": {
+    "appointments": [
+      {
+        "appt_id": "20001",
+        "appt_datetime": "2025-07-17T10:00:00",
+        "appt_status": "booked",
+        "doctor_name": "Dr Balachandra BV",
+        "procedure_name": "General Consultations",
+        "dob": "",
+        "gender": "",
+        "address": "",
+        "pincode": "",
+        "symptom-summary": "",
+        "prescription": ""
+      }
+    ]
+  }
+}
+
+### /message
+{
+  "thread_id": "SymptomTest1",
+  "message": "My child has had a fever and cough for two days."
+}
+
+---
+
+## 3. Follow-up Bot (completed appointment, no future appointments)
+
+### /start_conversation
+{
+  "thread_id": "FollowupTest1",
+  "doctor_name": "Dr Balachandra BV",
+  "clinic_name": "Chirayu Multispeciality clinic",
+  "specialty": "Consultant Pediatrician & Allergy Asthma Specialist",
+  "age": 8,
+  "gender": "male",
+  "consultation_type": "paediatrics",
+  "appointment_data": {
+    "appointments": [
+      {
+        "appt_id": "30001",
+        "appt_datetime": "2025-07-10T10:00:00",
+        "appt_status": "completed",
+        "doctor_name": "Dr Balachandra BV",
+        "procedure_name": "General Consultations",
+        "dob": "",
+        "gender": "",
+        "address": "",
+        "pincode": "",
+        "symptom-summary": "Fever and cough, resolved",
+        "prescription": "Paracetamol 250mg, 5ml TID for 3 days"
+      }
+    ]
+  }
+}
+
+### /message
+{
+  "thread_id": "FollowupTest1",
+  "message": "What is the prescription for Karan?"
+}
+
+---

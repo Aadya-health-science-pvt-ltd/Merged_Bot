@@ -5,6 +5,8 @@ from langchain_core.messages import AIMessage
 from typing import Dict, Any
 from config.constants import SAMPLE_PRESCRIPTION
 from utils.general_utils import retrieve_relevant_chunks
+from langchain.prompts import ChatPromptTemplate
+from langchain.output_parsers import StrOutputParser
 
 def get_info_node(state: ChatState):
     """Node to handle general information requests."""
@@ -18,11 +20,11 @@ def get_info_node(state: ChatState):
     # Only retrieve context if we have a valid URL
     if doctor_info_url:
         context_chunks = retrieve_relevant_chunks(doctor_info_url, query, k=4)
-        print(f"Retrieved {len(context_chunks)} context chunks")
-        for i, chunk in enumerate(context_chunks):
-            print(f"Chunk {i}: {chunk[:200]}...")
-        context = "\n\n".join(context_chunks)
-        print(f"Final context passed to LLM: {context[:500]}...")
+    print(f"Retrieved {len(context_chunks)} context chunks")
+    for i, chunk in enumerate(context_chunks):
+        print(f"Chunk {i}: {chunk[:200]}...")
+    context = "\n\n".join(context_chunks)
+    print(f"Final context passed to LLM: {context[:500]}...")
     else:
         print("[DEBUG] No doctor_info_url provided, using empty context")
         context = ""
@@ -76,12 +78,18 @@ def symptom_node(state: ChatState):
 def followup_node(state: ChatState):
     """Node to handle post-appointment follow-up."""
     print("--- Executing Follow-up Node ---")
-    
-    response_content = followup_chain.invoke({
+    if "followup_prompt" not in state or not state["followup_prompt"]:
+        raise ValueError("Hi, we are initializing the Followup Bot. Please start by saying Hi or ensure the session is initialized.")
+    from models.chains import llm
+    # Build a prompt template using the selected followup prompt
+    followup_prompt_template = ChatPromptTemplate.from_template(state["followup_prompt"])
+    # Compose the input for the chain
+    input_dict = {
         "messages": state["messages"],
-        "prescription": state.get("prescription", SAMPLE_PRESCRIPTION)
-    })
-    
+        "symptom_summary": state.get("symptom_summary", ""),
+        "prescription": state.get("prescription", "")
+    }
+    response_content = (followup_prompt_template | llm | StrOutputParser()).invoke(input_dict)
     return {"messages": state["messages"] + [AIMessage(content=response_content)]}
 
 def same_episode_check_node(state: ChatState):
