@@ -1,5 +1,4 @@
 gunicorn
-streamlit
 pandas
 langchain-community
 langchain-openai
@@ -21,7 +20,6 @@ langgraph-checkpoint-redis
 SQLAlchemy==2.0.23
 psycopg2-binary==2.9.9
 alembic==1.12.1
-sqlalchemy[postgresql]==2.0.23
 fastapi
 uvicorn
 python-multipart

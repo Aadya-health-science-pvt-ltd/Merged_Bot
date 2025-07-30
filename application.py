@@ -15,7 +15,7 @@ from conversation.chat_state import initialize_symptom_session
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
 
-app = Flask(__name__)
+application = Flask(__name__)
 
 executor = ThreadPoolExecutor(max_workers=(os.cpu_count() or 2) * 2)
 
@@ -23,7 +23,7 @@ conversations = {}
 SESSION_TIMEOUT = timedelta(minutes=15) # Session expires after 15 minutes of inactivity
 
 
-@app.route('/start_conversation', methods=['POST'])
+@application.route('/start_conversation', methods=['POST'])
 def start_conversation():
     """
     Start a new conversation thread with optional context parameters.
@@ -85,7 +85,7 @@ def start_conversation():
     }), 200
 
 
-@app.route('/message', methods=['POST'])
+@application.route('/message', methods=['POST'])
 def send_message():
     """
     Sends a user message to the chatbot. This endpoint handles routing to the correct bot
@@ -292,7 +292,7 @@ def send_message():
 
     return jsonify(response_data), 200
 
-@app.route('/embed_website', methods=['POST'])
+@application.route('/embed_website', methods=['POST'])
 def embed_website():
     data = request.get_json() or {}
     url = data.get('url')
@@ -311,7 +311,7 @@ def process_quiz_wizard_submission(state):
     # ... continue with routing to symptom_node or storing state ...
     return state
 
-@app.errorhandler(Exception)
+@application.errorhandler(Exception)
 def handle_exception(e):
     import traceback
     print("Exception in Flask app:", traceback.format_exc())
